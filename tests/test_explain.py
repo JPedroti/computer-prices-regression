@@ -129,12 +129,27 @@ def test_ensemble_and_single_share_the_feature_space(ridge_model, ensemble_model
 def test_global_report_ranks_every_feature(ridge_model, data, tmp_path):
     _, _, X_new = data
     result = compute_shap(ridge_model, X_new, sample=60, seed=0)
-    ranking = global_report(result, out_dir=tmp_path)
+    ranking = global_report(result, out_dir=tmp_path, reports_dir=tmp_path)
 
     assert len(ranking) == result.by_feature.shape[1]
     assert ranking["mean_abs_shap"].is_monotonic_decreasing
     assert (ranking["mean_abs_shap"] >= 0).all()
     assert (tmp_path / "shap_global_by_feature.png").exists()
+
+
+def test_global_report_writes_only_where_told(ridge_model, data, tmp_path):
+    """Reports must not leak into the project's delivered reports directory."""
+    from src.config import REPORTS_DIR
+
+    _, _, X_new = data
+    before = {p: p.stat().st_mtime for p in REPORTS_DIR.glob("*.csv")}
+
+    result = compute_shap(ridge_model, X_new, sample=40, seed=0)
+    global_report(result, out_dir=tmp_path, reports_dir=tmp_path)
+
+    after = {p: p.stat().st_mtime for p in REPORTS_DIR.glob("*.csv")}
+    assert before == after, "global_report wrote into the delivered reports directory"
+    assert (tmp_path / "shap_global_ranking.csv").exists()
 
 
 def test_local_report_shows_readable_values(ridge_model, data, tmp_path):

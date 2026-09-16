@@ -193,10 +193,22 @@ def compute_shap(
 # --------------------------------------------------------------------------- #
 # Global analysis
 # --------------------------------------------------------------------------- #
-def global_report(result: ShapResult, top: int = 20, out_dir: Path = FIGURES_DIR):
-    """Global feature ranking plus summary plots."""
+def global_report(
+    result: ShapResult,
+    top: int = 20,
+    out_dir: Path = FIGURES_DIR,
+    reports_dir: Path | None = None,
+):
+    """Global feature ranking plus summary plots.
+
+    ``reports_dir`` is where the CSV rankings go; it defaults to the project's
+    reports directory but must be redirectable, or a caller pointing ``out_dir``
+    at a temporary folder (a test, say) would still overwrite the delivered
+    rankings with output from a different model.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    reports_dir = reports_dir if reports_dir is not None else REPORTS_DIR
+    reports_dir.mkdir(parents=True, exist_ok=True)
 
     ranking = (
         pd.DataFrame(
@@ -230,10 +242,10 @@ def global_report(result: ShapResult, top: int = 20, out_dir: Path = FIGURES_DIR
                 "mean_shap": arr.mean(axis=0),
             }
         ).sort_values("mean_abs_shap", ascending=False).to_csv(
-            REPORTS_DIR / "shap_global_ranking_by_column.csv", index=False
+            reports_dir / "shap_global_ranking_by_column.csv", index=False
         )
 
-    ranking.to_csv(REPORTS_DIR / "shap_global_ranking.csv", index=False)
+    ranking.to_csv(reports_dir / "shap_global_ranking.csv", index=False)
     return ranking
 
 
