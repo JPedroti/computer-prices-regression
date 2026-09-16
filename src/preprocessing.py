@@ -1,13 +1,20 @@
 """Preprocessing strategies.
 
-Three representations are provided because different model families need
+Five representations are provided because different model families need
 different inputs:
 
-``native``   categorical columns as pandas ``category`` dtype -- LightGBM,
-             CatBoost and XGBoost consume these directly.
-``onehot``   median imputation + one-hot + scaling -- required by linear models.
-``ordinal``  integer-coded categories + imputation -- for tree models without
-             native categorical support (RandomForest, ExtraTrees).
+``native``       categorical columns as pandas ``category`` dtype -- LightGBM,
+                 CatBoost and XGBoost consume these directly.
+``onehot``       median imputation + one-hot + scaling, numeric columns entering
+                 as a single linear term each -- the classic linear-model setup.
+``ordinal``      integer-coded categories + imputation -- for tree models without
+                 native categorical support (RandomForest, ExtraTrees).
+``levels``       *saturated additive*: every low-cardinality column, numeric ones
+                 included, becomes one dummy per observed level, so a linear
+                 model can fit an arbitrary shape per feature while staying
+                 additive. This is what beat the gradient boosters (exp04).
+``levels_plus``  the dummies *and* the original numeric column, which keeps a
+                 monotone term for thinly observed levels.
 
 Every learned statistic (medians, category vocabularies, scaling parameters)
 is fitted inside a scikit-learn pipeline, so it is re-fitted on each training

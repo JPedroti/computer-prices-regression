@@ -46,34 +46,57 @@ OOF_CACHE = Path(__file__).resolve().parents[1] / "experiments" / "exp07_oof.npz
 INNER_SEEDS = ROBUSTNESS_SEEDS[:3]
 BASE = FeatureConfig()
 
+# Which cached out-of-fold vectors correspond to the two members.
+OOF_KEYS = ("ridge_levels", "cat_tuned")
 
-def members(seed: int):
+
+def members(seed: int, specs):
+    """Build the blend's members from the final-model configuration itself, so
+    this experiment can never drift from what `src/train.py` will fit."""
     return [
-        ("ridge_levels", build_model("ridge", feature_config=BASE, preprocessor="levels_plus",
-                                     seed=seed, alpha=100.0)),
-        ("cat", build_model("cat", feature_config=BASE, seed=seed,
-                            iterations=800, learning_rate=0.06, depth=6)),
+        (
+            spec.get("name", spec["model"]),
+            build_model(
+                spec["model"],
+                feature_config=BASE,
+                preprocessor=spec.get("preprocessor"),
+                seed=seed,
+                **spec.get("hyperparameters", {}),
+            ),
+        )
+        for spec in specs
     ]
 
 
 def main() -> None:
+    import json
+
     if not OOF_CACHE.exists():
         raise SystemExit("run experiments/exp07_ensembles.py first to build the OOF cache")
+
+    config_path = Path(__file__).resolve().parents[1] / "configs" / "final_model.json"
+    with open(config_path, encoding="utf-8") as fh:
+        config = json.load(fh)
+    specs = config["members"]
+    print(f"members from {config_path.name}: "
+          + ", ".join(f"{s.get('name', s['model'])} {s.get('hyperparameters', {})}" for s in specs))
 
     with np.load(OOF_CACHE, allow_pickle=True) as data:
         oof = {k: data[k] for k in data.files}
     y = oof.pop("y_true")
 
-    pair = {k: oof[k] for k in ("ridge_levels", "cat")}
-    weights, blended_rmse = blend_search(pair, y)
-    print("=== two-member blend, weights from out-of-fold predictions ===")
-    for k, v in weights.items():
-        print(f"  {k:14s} {v:.4f}")
-    print(f"  pooled OOF RMSE : {blended_rmse:.3f}")
-    print(f"  ridge alone     : {rmse(y, oof['ridge_levels']):.3f}")
-    print(f"  catboost alone  : {rmse(y, oof['cat']):.3f}")
+    missing = [k for k in OOF_KEYS if k not in oof]
+    if missing:
+        raise SystemExit(f"missing cached OOF for {missing}; rerun exp07_ensembles.py")
 
-    fixed = [float(weights["ridge_levels"]), float(weights["cat"])]
+    pair = {k: oof[k] for k in OOF_KEYS}
+    weights, blended_rmse = blend_search(pair, y)
+    print("\n=== two-member blend, weights from out-of-fold predictions ===")
+    for k, v in weights.items():
+        print(f"  {k:14s} {v:.4f}   (alone: {rmse(y, oof[k]):.3f})")
+    print(f"  pooled OOF RMSE : {blended_rmse:.3f}")
+
+    fixed = [float(weights[k]) for k in OOF_KEYS]
 
     # ------------------------------------------------------------------ #
     # Overfitting margin on inner splits, comparable with exp11
@@ -83,7 +106,7 @@ def main() -> None:
     rows = []
     for seed in INNER_SEEDS:
         X_tr, X_va, y_tr, y_va = train_test_split(X_dev, y_dev, test_size=0.20, random_state=seed)
-        model = WeightedEnsemble(members=members(seed), weights=fixed)
+        model = WeightedEnsemble(members=members(seed, specs), weights=fixed)
         model.fit(X_tr, y_tr)
         report = overfitting_report(
             y_tr, model.predict(X_tr), y_va, model.predict(X_va), n_boot=BOOTSTRAP_N
@@ -105,9 +128,10 @@ def main() -> None:
     print(f"\nmean margin  : {table['margin'].mean():+.2f}")
     print(f"worst margin : {table['margin'].min():+.2f}")
     print(f"passes       : {int(table['overlap'].sum())}/{len(table)}")
-    print("\nfor comparison (exp11): Ridge alone +27.74 mean / +25.20 worst;")
-    print("                        CatBoost alone +20.11 mean / +17.53 worst;")
-    print("                        LightGBM alone -12.96 mean, fails on every split.")
+    print("\nfor comparison (exp11): Ridge alone     +27.74 mean / +25.20 worst")
+    print("                        CatBoost alone  +20.11 mean / +17.53 worst")
+    print("                        HistGB alone     +9.40 mean /  +7.50 worst")
+    print("                        LightGBM alone  -12.96 mean, fails on every split")
 
     out = Path(__file__).resolve().parents[1] / "experiments" / "exp13_blend_margin.csv"
     table.to_csv(out, index=False)

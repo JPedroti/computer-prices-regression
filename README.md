@@ -55,7 +55,8 @@ computer-prices-regression/
 │   ├── config.py        paths, seeds, column semantics, protocol constants
 │   ├── data.py          loading and the dev / sealed-holdout split
 │   ├── features.py      row-wise feature engineering, one switch per family
-│   ├── preprocessing.py the three column representations
+│   ├── preprocessing.py the five column representations (native, onehot,
+│   │                    ordinal, levels, levels_plus)
 │   ├── models.py        model factory: every model is a full pipeline
 │   ├── ensemble.py      weighted blending and stacking
 │   ├── evaluate.py      metrics, cross-validation, bootstrap overfitting rule
