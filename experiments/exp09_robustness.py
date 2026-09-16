@@ -124,7 +124,7 @@ def main() -> None:
         print(f"  {label:26s} diff={diff.mean():+7.3f} +-{se:5.3f}  "
               f"beats reference on {wins}/{len(diff)} folds")
 
-    print(f"\n=== per-seed means ===")
+    print("\n=== per-seed means ===")
     print(pd.DataFrame(per_model_seed_means).round(3).to_string())
 
     out = Path(__file__).resolve().parents[1] / "experiments" / "exp09_robustness.json"

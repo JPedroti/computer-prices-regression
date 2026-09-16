@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 import joblib
-import numpy as np
 
 from .config import (
     BOOTSTRAP_N,

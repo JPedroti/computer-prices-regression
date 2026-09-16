@@ -205,8 +205,6 @@ def local_report(
     out_dir: Path = FIGURES_DIR,
 ):
     """Explain one observation: contributions summed per feature, with raw values."""
-    import shap
-
     out_dir.mkdir(parents=True, exist_ok=True)
     arr = values.values if hasattr(values, "values") else np.asarray(values)
     base = float(np.asarray(values.base_values).ravel()[row]) if hasattr(values, "base_values") else 0.0
