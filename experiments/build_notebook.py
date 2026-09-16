@@ -602,6 +602,10 @@ NOTEBOOK = {
 
 def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
+    # nbformat 4.5+ expects every cell to carry a stable id; supplying them
+    # keeps the file valid without a normalisation pass.
+    for i, cell in enumerate(NOTEBOOK["cells"]):
+        cell["id"] = f"cell-{i:02d}"
     with open(OUT, "w", encoding="utf-8") as fh:
         json.dump(NOTEBOOK, fh, indent=1)
     print(f"wrote {OUT.relative_to(ROOT)}  ({len(CELLS)} cells)")

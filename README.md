@@ -186,8 +186,24 @@ optuna 5.0.0       joblib 1.5.3       matplotlib 3.11.1    seaborn 0.13.2
 
 ## Notes and limitations
 
-* SHAP describes what the model does, not what causes prices. No causal claim
+* **The error left is very likely irreducible.** Its spread is proportional to
+  price at about 11% with an extremely heavy right tail — the worst 0.1% of rows
+  carry 38% of all squared error while belonging to no identifiable segment — and
+  the model's RMSE already equals what that noise alone implies. A flexible
+  booster drives training error far below the additive model's while making
+  validation error worse. Further gains here are likely to be fractions of a
+  point, not points.
+* **The feature engineering is not load-bearing.** Under the saturated
+  representation every engineered family is redundant (no family moves the RMSE
+  by more than 0.14). The engineered columns are kept because they cost nothing
+  measurable and make the SHAP output readable, not because they were shown to
+  help. The gain over the boosters came from the representation.
+* **SHAP describes what the model does, not what causes prices.** No causal claim
   is made anywhere in this repository.
-* The secret test set is assumed to be drawn from the same distribution as the
-  development data. This is a working hypothesis, not a guarantee, so no
-  modelling choice depends on the particular way the data was split.
+* **The secret test set is assumed to share the development distribution.** This
+  is a working hypothesis, not a guarantee, so no modelling choice depends on the
+  particular way the data was split. `ID` was checked and dropped rather than
+  exploited.
+* **The holdout was read once.** Candidate models were compared with the
+  overfitting rule on inner splits of the development data; the sealed holdout is
+  touched only by `src/train.py`, after the model was already chosen.
