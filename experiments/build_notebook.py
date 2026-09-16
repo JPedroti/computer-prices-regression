@@ -422,11 +422,27 @@ does**, not what causes prices in the world; nothing here is a causal claim.
     code("""
 from src.explain import compute_shap, global_report, local_report
 
-shap_values, transformed, estimator = compute_shap(final_model, X_hold, sample=1500)
-print("estimator:", type(estimator).__name__, "| features:", transformed.shape[1])
+shap_values, transformed, display_rows, estimator = compute_shap(final_model, X_hold, sample=1500)
+print("estimator:", type(estimator).__name__, "| transformed columns:", transformed.shape[1])
 
-ranking = global_report(shap_values, transformed)
-ranking.head(20).round(3).reset_index(drop=True)
+# The saturated representation spreads one feature over many columns, so the
+# SHAP values are summed back onto the source feature to be readable.
+ranking, column_ranking = global_report(shap_values, transformed)
+ranking.head(20).round(2)
+"""),
+    code("""
+top = ranking.head(15).iloc[::-1]
+fig, ax = plt.subplots(figsize=(9, 6))
+ax.barh(top['feature'], top['mean_abs_shap'], color="steelblue")
+ax.set_xlabel("mean |SHAP| (in price units)")
+ax.set_title("Which features move this model's predictions most")
+plt.tight_layout(); plt.show()
+"""),
+    md("""
+The ranking is dominated by the component specifications — GPU and CPU tier,
+storage, RAM, display type — which is what one would expect of a machine's
+price. Read this as a description of the fitted model's behaviour: it says which
+inputs the model leans on, not which of them *cause* a price in the market.
 """),
     md("""
 ## 13. SHAP — local
@@ -436,15 +452,32 @@ those that pushed it down.
 """),
     code("""
 ROW = 0
-base, contrib = local_report(shap_values, transformed, row=ROW)
+base, contrib = local_report(shap_values, transformed, display_rows, row=ROW)
 print(f"base value (mean prediction) = {base:.2f}")
-print(f"model prediction             = {base + contrib['shap'].sum():.2f}")
-print(f"actual price                 = {y_hold.iloc[ROW]:.2f}\\n")
+print(f"model prediction             = {base + contrib['shap'].sum():.2f}\\n")
 
 print("pushing the prediction UP:")
-display(contrib[contrib['shap'] > 0].head(8)[['feature', 'value', 'shap']].round(3))
-print("pushing the prediction DOWN:")
-display(contrib[contrib['shap'] < 0].head(8)[['feature', 'value', 'shap']].round(3))
+display(contrib[contrib['shap'] > 0].head(8)[['feature', 'value', 'shap']].round(2))
+print("\\npushing the prediction DOWN:")
+display(contrib[contrib['shap'] < 0].head(8)[['feature', 'value', 'shap']].round(2))
+"""),
+    code("""
+head = contrib.head(14).iloc[::-1]
+fig, ax = plt.subplots(figsize=(9, 6))
+ax.barh([f"{f} = {v}" for f, v in zip(head['feature'], head['value'])],
+        head['shap'], color=np.where(head['shap'] < 0, "indianred", "steelblue"))
+ax.axvline(0, color="black", lw=1)
+ax.set_xlabel("contribution to the predicted price")
+ax.set_title(f"Why the model predicted {base + contrib['shap'].sum():,.0f} for observation {ROW}")
+plt.tight_layout(); plt.show()
+"""),
+    md("""
+Reading the example above: the model starts from the average prediction and then
+adds or subtracts for each specification. A high GPU tier and large storage push
+the estimate up; a mechanical hard drive and a plain IPS panel pull it down.
+
+Again, this is the model's internal accounting, not a causal statement about the
+computer market.
 """),
     md("""
 ## 14. Inference on new data
