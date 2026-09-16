@@ -346,7 +346,78 @@ fair objection.
 
 ## exp07 — Ensembles
 
-*(in progress)*
+Out-of-fold predictions were generated once per candidate on the shared folds and
+then combined offline.
+
+**A measurement bug worth recording.** The first version of this experiment
+compared a blend's *pooled* out-of-fold RMSE against a single model's *mean of
+per-fold RMSEs*. Those are different aggregations and differ by a few tenths
+here, because fold RMSEs are dominated by how many extreme prices each fold
+happens to receive. The comparison made the blend look worse than the best single
+model, which is impossible for a non-negative least squares blend fitted on those
+same predictions. Everything below is the pooled out-of-fold RMSE.
+
+| Model | pooled OOF RMSE | mean of fold RMSEs |
+|---|---|---|
+| CatBoost | **211.686** | 211.253 |
+| Ridge `levels_plus` | 212.341 | 211.920 |
+| HistGradientBoosting | 215.056 | 214.675 |
+| LightGBM | 215.494 | 215.114 |
+| Ridge `onehot` | 217.623 | 217.240 |
+
+| Blend | pooled OOF RMSE | gain vs best single |
+|---|---|---|
+| NNLS over all five | 211.308 | +0.378 |
+| **NNLS over Ridge + CatBoost** | **211.333** | **+0.353** |
+| simple average of Ridge + CatBoost | 211.375 | +0.311 |
+
+**Result.** Blending helps, but only a little, and essentially all of it comes
+from combining the additive Ridge with CatBoost: adding the other three members
+buys 0.025 RMSE. That is unsurprising given the residual correlations — Ridge and
+CatBoost correlate at 0.988, and every pair is above 0.94.
+
+Weights fitted and scored on the same vector are optimistic, so the check was
+repeated honestly: fit the weights on one half of the rows, score on the other.
+For the two-member blend the gain over CatBoost alone was **+0.42** in one
+direction and **+0.27** in the other, with weights of 0.34/0.66 and 0.40/0.60 —
+stable, and positive both ways.
+
+---
+
+## exp12 — What does the train-only protocol cost?
+
+Section 17 requires the final model to be fitted on the training split alone, so
+the delivered model sees 64,000 rows instead of all 80,000. A learning curve with
+a fixed validation block measures that cost instead of assuming it away.
+
+The curve is flat at this end. Fitting `rmse² = a + b/n` over training sizes from
+4,000 to 52,000 rows gives an implied RMSE of 210.45 at n = 64,000 against 210.35
+at n = 80,000: **the protocol costs about 0.10 RMSE**.
+
+**Decision.** Follow section 17 literally. It costs a rounding error, and the
+alternative — shipping a model trained on all the data while reporting the rule
+from a split — buys nothing and invites a fair objection.
+
+---
+
+## exp13 — Choosing the final model
+
+Three candidates survived, and the choice between them is made on the joint
+criteria of section 33, not on RMSE alone.
+
+| | Ridge `levels_plus` | CatBoost | **Ridge + CatBoost blend** |
+|---|---|---|---|
+| pooled OOF RMSE | 212.341 | 211.686 | **211.333** |
+| overfitting margin, worst inner split | +25.20 | +17.53 | see below |
+| deterministic across refits | yes | yes | yes |
+| artefact size | 24 KB | a few MB | a few MB |
+| SHAP | exact (linear) | exact (tree) | exact (weighted sum of the two) |
+
+The blend's weights are 0.372 on the Ridge and 0.628 on CatBoost.
+
+*(overfitting margins for the blend: in progress)*
+
+---
 
 ## exp09 — Robustness across seeds
 
