@@ -15,8 +15,11 @@ what was decided as a consequence.
   differences are.
 * **Robustness** — finalists re-scored over three fold partitions (15 folds),
   with the seed driving both the partition and the model's own randomness.
-* **Overfitting holdout** — 16,000 rows, split off once with seed 42 and sealed.
-  Used only for the official bootstrap rule, never to select anything.
+* **Holdout** — 16,000 rows, split off once with seed 42 and never used to fit a
+  model. It is where the official bootstrap rule is applied to the final model.
+  No model, hyperparameter, feature family or blend weight was chosen by
+  comparing scores on it, but it was not read only once — see *How the holdout
+  was actually used* at the end of this log.
 
 **How to read `results.csv`.** Sorting it by `validation_rmse` gives a rough
 leaderboard, but the rows are not all measured the same way — always read
@@ -407,7 +410,7 @@ The official rule is binary and worth 15 points, so what matters is not only
 whether a candidate passes but by how much. A candidate that passes by a hair is
 a bad bet, because the margin depends on which rows land in validation.
 
-**The sealed holdout cannot be used for this comparison** — using it to choose
+**The holdout cannot be used for this comparison** — using it to choose
 between candidates would make it a selection set and void the final number. The
 rule is therefore rehearsed on *inner* splits of the development data (same 80/20
 shape, same bootstrap), repeated over three seeds.
@@ -523,11 +526,11 @@ measured, out-of-sample gain — which is the standard section 16 asks for.
 
 ---
 
-## Final result — the sealed holdout, read once
+## Final result on the holdout
 
 The blend was fitted on the 64,000 development rows and the official rule
-applied to the 16,000 sealed holdout rows. This is the first and only time the
-holdout was used.
+applied to the 16,000 holdout rows (commit `10452c2`). This was not the first
+time the holdout's prices were scored — see the next section.
 
 ```text
 train RMSE      =  206.614   95% CI [196.987, 216.383]
@@ -546,13 +549,71 @@ and it is worth stating rather than glossing: with a heavy-tailed target, how fa
 the intervals overlap depends on how many extreme prices land in validation.
 
 For reference, the Ridge alone scored 233.795 on the same holdout with a margin
-of +11.60. The blend is 0.85 RMSE better and keeps a smaller but still positive
-buffer. The choice between them was made on cross-validation and inner splits
-*before* the holdout was opened, and it is not revisited now on the strength of
-one number — doing so would turn the holdout into the selection set the whole
-protocol was built to avoid.
+of +11.60, in the first end-to-end run of `src/train.py` (commit `cc5ed3f`). The
+blend is 0.85 RMSE better and keeps a smaller but still positive buffer. The
+choice between them was made on cross-validation and inner splits, not on these
+two numbers, and it is not revisited now on the strength of one number — doing
+so would turn the holdout into a selection set.
 
 The holdout RMSE (232.9) is higher than the cross-validated estimate (211.0)
 because this particular 16,000-row block drew more of the expensive tail; the
 same pattern showed up across the inner splits, where validation RMSE ranged from
 211.7 to 219.5 depending on the seed.
+
+---
+
+## How the holdout was actually used
+
+Earlier versions of this log and of the README said the holdout was read only
+once. That was wrong. This is the chronology, reconstructed from the commit
+history and the development session.
+
+Three kinds of data play different roles and are kept apart below:
+
+| Data | Role |
+|---|---|
+| CV folds and inner splits of the 64,000 development rows | every choice of model, hyperparameter and blend weight, and the feature-family ablation (exp01–exp13) |
+| holdout, the other 16,000 rows | never used to fit a model; scored at the points listed below |
+| the mentor's secret test set | never accessed, inspected or reconstructed |
+
+**1. Initial audit, before the split was formalised.** The dataset audit computed
+statistics involving the price on all 80,000 rows, including the between-group
+variance ratios used to decide which parts of `model` and `cpu_model` to keep.
+Its exploratory probes (LightGBM and Ridge fits, and a first bootstrap check of
+the overfitting rule) were trained on 80% of the rows and scored on the other 20%
+with `train_test_split(test_size=0.2, random_state=42)` — exactly the partition
+`src/data.py` later adopted, so the scored rows are the holdout rows. These
+observations motivated the hypotheses investigated afterwards, each of which was
+then tested on development data. The notebook's EDA likewise describes all
+80,000 rows and prints the holdout's mean price.
+
+**2. Pipeline sanity checks during development.** While the code was being built,
+ad-hoc scripts outside the repository fitted models on subsets of the development
+rows and printed their RMSE on the holdout, to confirm that a code path worked:
+
+| Check | Fitted on | Holdout RMSE |
+|---|---|---|
+| `levels` / `levels_plus` encoder fix | 20,000 development rows | 234.32 / 234.28 |
+| interaction pipeline | 20,000 development rows | 234.29 |
+| refit determinism, Ridge / CatBoost | 25,000 development rows | 234.38 / 234.39 |
+| ensemble configuration path (Ridge + HistGradientBoosting), learned / fixed weights | 12,000 development rows | 235.43 / 235.79 |
+
+**3. First end-to-end run of `src/train.py`** (commit `cc5ed3f`), with the Ridge
+`levels_plus` configuration then in `configs/final_model.json`: holdout RMSE
+233.80, margin +11.60. An inference check on that same model reproduced 233.80.
+
+**4. Final run of `src/train.py` with the blend** (commit `10452c2`): holdout RMSE
+232.95, margin +7.26. The executed notebook, `experiments/final_check.py` and the
+final audit re-evaluate this same fixed model and reproduce those numbers.
+
+**5. Feature rows without prices.** Holdout rows are the unseen inputs for the
+SHAP explanations and for the inference-contract tests; one test loads them with
+the price column present only to check that it is ignored.
+
+**What this means.** No model, hyperparameter, feature family or blend weight was
+selected by comparing scores on the holdout: the Ridge-versus-blend decision
+rests on exp07, exp09, exp11 and exp13, and on the holdout the Ridge actually had
+the larger margin. But the holdout's prices were seen repeatedly, and the audit
+that shaped the early hypotheses used them, so the holdout figures are a check on
+a model chosen on development data rather than a strictly blind estimate of
+generalisation. The mentor's secret test set was never accessed.

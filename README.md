@@ -10,7 +10,7 @@ criteria.
 ## Quick start
 
 ```bash
-python -m venv .venv
+python -m venv .venv            # use Python 3.11: the pins were tested on 3.11.9
 .venv\Scripts\activate          # Windows;  source .venv/bin/activate on Linux/macOS
 pip install -r requirements.txt
 ```
@@ -79,7 +79,7 @@ computer-prices-regression/
 │   └── 01_exploration_and_modeling.ipynb   the full story, start to finish
 ├── src/
 │   ├── config.py        paths, seeds, column semantics, protocol constants
-│   ├── data.py          loading and the dev / sealed-holdout split
+│   ├── data.py          loading and the development / holdout split
 │   ├── features.py      row-wise feature engineering, one switch per family
 │   ├── preprocessing.py the five column representations (native, onehot,
 │   │                    ordinal, levels, levels_plus)
@@ -128,11 +128,18 @@ The 80,000 development rows are split once, with seed 42, into:
 
 * **development** (64,000 rows) — every modelling decision is made here, by
   5-fold cross-validation with fixed folds so that model comparisons are
-  paired;
-* **holdout** (16,000 rows) — sealed, and used only to apply the official
-  overfitting rule.
+  paired, and by inner train/validation splits of these same rows;
+* **holdout** (16,000 rows) — never used to fit a model, and the split on which
+  the official overfitting rule is applied to the final model.
 
-The holdout is never used to select a model, a feature or a hyperparameter.
+Three sets of data play different roles and are kept apart:
+
+| Data | Role |
+|---|---|
+| CV folds and inner splits of the 64,000 development rows | every choice of model, hyperparameter and blend weight, and the feature-family ablation |
+| holdout, the other 16,000 rows | the official overfitting rule on the final model; its prices were also scored at other points, but no choice was made by comparing scores on it (see *Overfitting rule*) |
+| the mentor's secret test set | never accessed |
+
 The secret test set is never accessed, inspected or reasoned about beyond the
 assumption that it shares the development distribution.
 
@@ -177,9 +184,10 @@ That last row is the point worth keeping: a perfectly ordinary, well-performing
 LightGBM is only 4 RMSE points behind and would score **zero** of the 15
 overfitting points.
 
-### Result on the sealed holdout
+### Result on the holdout
 
-Fitted on the 64,000 development rows, evaluated once on the 16,000 sealed rows:
+The final model, fitted on the 64,000 development rows and evaluated on the
+16,000 holdout rows (commit `10452c2`):
 
 ```text
 train RMSE      =  206.614   95% CI [196.987, 216.383]     MAE 135.72
@@ -203,9 +211,23 @@ built by resampling **observations** (2,000 replicates, seed 12345); the
 intervals are then compared. Overlapping intervals mean no overfitting.
 
 Candidate models were compared using this rule on *inner* splits of the
-development data (`exp11`, `exp13`), never on the sealed holdout — using the
-holdout to choose between candidates would have made it a selection set and
-voided the final number. The holdout is read exactly once, by `src/train.py`.
+development data (`exp11`, `exp13`), never on the holdout — using the holdout to
+choose between candidates would have made it a selection set.
+
+**The holdout was not read only once, and it is not a strictly blind estimate.**
+Before the split was formalised, the initial dataset audit computed price
+statistics on all 80,000 rows and scored its exploratory probes on exactly the
+rows that became the holdout. During development its prices were scored again by
+quick sanity checks of the pipeline, by the first end-to-end run of
+`src/train.py` with the Ridge configuration (commit `cc5ed3f`, RMSE 233.80), and
+by the final run with the blend (commit `10452c2`), which the notebook and
+`experiments/final_check.py` re-evaluate. Its feature rows, without prices, are
+also the unseen inputs for SHAP and for the inference tests. No model,
+hyperparameter, feature family or blend weight was chosen by comparing scores on
+the holdout; the full chronology is in `experiments/experiment_log.md`. The
+holdout figures are therefore a check on a model chosen on development data, not
+an untouched estimate of generalisation. The mentor's secret test set was never
+accessed.
 
 Reported values are in `models/final_model_metadata.json`.
 
@@ -213,12 +235,12 @@ Reported values are in `models/final_model_metadata.json`.
 
 ## Reproducibility
 
-Developed and tested with Python 3.11.9 and:
+Developed and tested with Python 3.11.9 (64-bit, Windows 11) and:
 
 ```text
 numpy 2.4.6        pandas 3.0.5       scikit-learn 1.9.0   scipy 1.17.1
 lightgbm 4.7.0     xgboost 3.2.0      catboost 1.2.10      shap 0.51.0
-optuna 5.0.0       joblib 1.5.3       matplotlib 3.11.1    seaborn 0.13.2
+joblib 1.5.3       matplotlib 3.11.1  seaborn 0.13.2       pytest 9.1.1
 ```
 
 * All seeds are fixed in `src/config.py` and applied through `src.utils.set_seed`.
@@ -226,7 +248,11 @@ optuna 5.0.0       joblib 1.5.3       matplotlib 3.11.1    seaborn 0.13.2
   scikit-learn pipeline, so it is re-fitted per fold and cannot leak.
 * The delivered artefact is a single pipeline: raw CSV in, predictions out, no
   manual preprocessing and no retraining.
-* `requirements.txt` pins the minimum versions used.
+* `requirements.txt` pins exact versions (`==`) of every package the code
+  imports, plus the numerical back ends `numba`, `llvmlite` and `threadpoolctl`
+  and the notebook tooling. Other transitive dependencies are resolved by pip.
+  `optuna` was installed during development but no code uses it, so it is not
+  listed.
 
 ---
 
@@ -250,6 +276,8 @@ optuna 5.0.0       joblib 1.5.3       matplotlib 3.11.1    seaborn 0.13.2
   is a working hypothesis, not a guarantee, so no modelling choice depends on the
   particular way the data was split. `ID` was checked and dropped rather than
   exploited.
-* **The holdout was read once.** Candidate models were compared with the
-  overfitting rule on inner splits of the development data; the sealed holdout is
-  touched only by `src/train.py`, after the model was already chosen.
+* **The holdout is not a strictly blind estimate.** No model, hyperparameter,
+  feature family or blend weight was chosen by comparing scores on it, but its
+  rows were scored in the initial audit and several times during development, so
+  it was not read only once (chronology in `experiments/experiment_log.md`). The
+  mentor's secret test set was never accessed.
