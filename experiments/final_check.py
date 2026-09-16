@@ -48,6 +48,7 @@ def main() -> None:
         ROOT / "notebooks" / "01_exploration_and_modeling.ipynb",
         ROOT / "reports" / "shap_global_ranking.csv",
         ROOT / "reports" / "figures" / "shap_global_by_feature.png",
+        ROOT / "reports" / "figures" / "shap_effect_by_level.png",
         ROOT / "reports" / "figures" / "shap_local_row0.png",
     ]:
         check(f"exists: {path.relative_to(ROOT).as_posix()}", path.exists())
@@ -99,9 +100,11 @@ def main() -> None:
     meta = json.loads((ROOT / "models" / "final_model_metadata.json").read_text(encoding="utf-8"))
     check("metadata records the config and the rule",
           "config" in meta and "overfitting_rule" in meta)
+    # The metadata stores metrics rounded to four decimals, so the tolerance
+    # has to match that precision rather than machine epsilon.
     check("metadata metrics match a fresh evaluation",
-          abs(meta["metrics"]["holdout_rmse"] - metrics["holdout RMSE"]) < 1e-6,
-          f"{meta['metrics']['holdout_rmse']:.4f}")
+          abs(meta["metrics"]["holdout_rmse"] - metrics["holdout RMSE"]) < 5e-4,
+          f"stored {meta['metrics']['holdout_rmse']:.4f} vs fresh {metrics['holdout RMSE']:.4f}")
 
     a = predict_frame(X_hold.head(200), model=load_model()).to_numpy()
     b = predict_frame(X_hold.head(200), model=load_model()).to_numpy()
