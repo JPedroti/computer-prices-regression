@@ -17,6 +17,15 @@ what was decided as a consequence.
 * **Overfitting holdout** — 16,000 rows, split off once with seed 42 and sealed.
   Used only for the official bootstrap rule, never to select anything.
 
+**How to read `results.csv`.** Sorting it by `validation_rmse` gives a rough
+leaderboard, but the rows are not all measured the same way — always read
+`validation_strategy` alongside. Most rows are the mean of 5 fold RMSEs under
+the screening protocol; exp09's rows are means over 15 folds; and exp07's blend
+rows are the RMSE of the pooled out-of-fold vector, which is a different
+statistic again (see exp07 for why that distinction cost an experiment).
+Comparisons within a strategy are meaningful; across strategies they differ by a
+few tenths for reasons that have nothing to do with model quality.
+
 ---
 
 ## Phase 0 — Dataset audit
