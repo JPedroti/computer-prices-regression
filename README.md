@@ -164,6 +164,23 @@ That last row is the point worth keeping: a perfectly ordinary, well-performing
 LightGBM is only 4 RMSE points behind and would score **zero** of the 15
 overfitting points.
 
+### Result on the sealed holdout
+
+Fitted on the 64,000 development rows, evaluated once on the 16,000 sealed rows:
+
+```text
+train RMSE      =  206.614   95% CI [196.987, 216.383]     MAE 135.72
+holdout RMSE    =  232.946   95% CI [209.123, 259.959]     MAE 139.82
+overlap = True   margin = +7.26   ->  no overfitting, 15 points
+```
+
+Two honest notes. The holdout RMSE (232.9) is higher than the cross-validated
+estimate (211.0) because this particular block drew more of the expensive tail —
+the same swing appears across inner splits, where validation RMSE ranged from
+211.7 to 219.5 by seed. And the margin of +7.26 sits at the low end of what the
+inner-split rehearsals predicted (+20.4 to +24.9); it is positive, so the rule
+awards the full 15 points, but the spread is real and worth stating.
+
 ### Overfitting rule
 
 Implemented exactly as specified, in `src.evaluate.overfitting_report`:

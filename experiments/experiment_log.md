@@ -520,3 +520,39 @@ prediction to within 1e-6.
 
 The complexity added is two models with fixed weights, and it is paid for by a
 measured, out-of-sample gain — which is the standard section 16 asks for.
+
+---
+
+## Final result — the sealed holdout, read once
+
+The blend was fitted on the 64,000 development rows and the official rule
+applied to the 16,000 sealed holdout rows. This is the first and only time the
+holdout was used.
+
+```text
+train RMSE      =  206.614   95% CI [196.987, 216.383]
+holdout RMSE    =  232.946   95% CI [209.123, 259.959]
+overlap = True   margin = +7.26
+verdict: no overfitting  ->  15 points
+```
+
+train MAE 135.72, holdout MAE 139.82. Artefact: 3.8 MB.
+
+**On that margin, honestly.** The inner-split rehearsals in exp13 put the blend's
+margin at +20.4 to +24.9. On the split that actually counts it is +7.26 —
+positive, so the rule awards the full 15 points, but at the low end of what the
+rehearsals suggested. That is the variation the rehearsals existed to measure,
+and it is worth stating rather than glossing: with a heavy-tailed target, how far
+the intervals overlap depends on how many extreme prices land in validation.
+
+For reference, the Ridge alone scored 233.795 on the same holdout with a margin
+of +11.60. The blend is 0.85 RMSE better and keeps a smaller but still positive
+buffer. The choice between them was made on cross-validation and inner splits
+*before* the holdout was opened, and it is not revisited now on the strength of
+one number — doing so would turn the holdout into the selection set the whole
+protocol was built to avoid.
+
+The holdout RMSE (232.9) is higher than the cross-validated estimate (211.0)
+because this particular 16,000-row block drew more of the expensive tail; the
+same pattern showed up across the inner splits, where validation RMSE ranged from
+211.7 to 219.5 depending on the seed.

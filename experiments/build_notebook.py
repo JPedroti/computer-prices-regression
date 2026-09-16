@@ -492,9 +492,9 @@ those that pushed it down.
 """),
     code("""
 ROW = 0
-base, contrib = local_report(shap_values, transformed, display_rows, row=ROW)
+base, contrib = local_report(shap_result, row=ROW)
 print(f"base value (mean prediction) = {base:.2f}")
-print(f"model prediction             = {base + contrib['shap'].sum():.2f}\\n")
+print(f"model prediction             = {shap_result.prediction(ROW):.2f}\\n")
 
 print("pushing the prediction UP:")
 display(contrib[contrib['shap'] > 0].head(8)[['feature', 'value', 'shap']].round(2))
@@ -609,7 +609,63 @@ NOTEBOOK = {
 }
 
 
+def check_names() -> list[str]:
+    """Flag names a cell reads that no earlier cell ever binds.
+
+    The notebook is a single namespace executed top to bottom, so a rename that
+    is applied in one cell and missed in another only shows up when the whole
+    thing is run -- which takes a quarter of an hour. This is a cheap static
+    pass over the same property, run at build time.
+    """
+    import ast
+    import builtins
+
+    bound: set[str] = set(dir(builtins)) | {"display", "get_ipython", "__file__"}
+    problems: list[str] = []
+
+    for index, cell in enumerate(CELLS):
+        if cell["cell_type"] != "code":
+            continue
+        source = "".join(cell["source"])
+        try:
+            tree = ast.parse(source)
+        except SyntaxError as exc:  # reported separately by the caller
+            problems.append(f"cell {index}: syntax error: {exc}")
+            continue
+
+        # Everything this cell binds counts as available to it: the target is
+        # names that no cell ever defines, not within-cell ordering.
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                bound.add(node.id)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                bound.add(node.name)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    bound.add(alias.asname or alias.name.split(".")[0])
+            elif isinstance(node, ast.arg):
+                bound.add(node.arg)
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                bound.add(node.name)
+
+        used: set[str] = {
+            node.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+        }
+        problems += [f"cell {index}: uses undefined name {n!r}" for n in sorted(used - bound)]
+
+    return problems
+
+
 def main() -> None:
+    problems = check_names()
+    if problems:
+        print("notebook validation failed:")
+        for problem in problems:
+            print(f"  {problem}")
+        raise SystemExit(1)
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
     # nbformat 4.5+ expects every cell to carry a stable id; supplying them
     # keeps the file valid without a normalisation pass.
