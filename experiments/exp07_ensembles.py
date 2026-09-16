@@ -1,20 +1,25 @@
 """Experiment 07 -- do ensembles beat the best single model?
 
 Out-of-fold predictions are produced once per candidate on the shared folds and
-then combined offline, so many blends can be compared without refitting
-anything. Three combiners are tried:
+then combined offline, so many blends can be compared without refitting. Weights
+are fitted on out-of-fold predictions, which is the only leak-free way to learn
+them: every prediction being combined was made by a model that had not seen that
+row.
 
-* simple average;
-* non-negative least squares weights (no member may contribute negatively);
-* a ridge meta-learner (stacking).
+Two measurement points that are easy to get wrong, and are handled explicitly:
 
-The weights are fitted on out-of-fold predictions, which is the only leak-free
-way to learn them: every prediction being combined was made by a model that had
-not seen that row.
+1. **Aggregation must match.** The mean of per-fold RMSEs is not the RMSE of the
+   pooled out-of-fold vector; the two differ by a few tenths here because fold
+   RMSEs are dominated by how many extreme prices each fold happened to get.
+   Comparing a blend's pooled RMSE against a single model's mean-of-folds would
+   flatter or penalise the blend for no reason, so every number in the blend
+   table below is the pooled out-of-fold RMSE.
+2. **Weights fitted and scored on the same vector are optimistic.** With five
+   members that optimism is tiny, but it is measured rather than assumed: the
+   weights are refitted on one half of the rows and scored on the other.
 
-A blend is only adopted if it beats the best single model by more than the
-paired fold-to-fold noise, and if it does not reintroduce a large train gap
-(CLAUDE.md section 16 -- no complexity without measurable benefit).
+A blend is adopted only if it beats the best single model by more than that
+honest margin (CLAUDE.md section 16).
 """
 from __future__ import annotations
 
@@ -38,8 +43,8 @@ from src.models import build_model
 from src.utils import ExperimentTracker
 
 BASE = FeatureConfig()
+OOF_CACHE = Path(__file__).resolve().parents[1] / "experiments" / "exp07_oof.npz"
 
-# name -> (model, preprocessor, params, feature_config)
 CANDIDATES: dict[str, tuple[str, str | None, dict, FeatureConfig]] = {
     "ridge_levels": ("ridge", "levels_plus", {"alpha": 100.0}, BASE),
     "ridge_onehot": ("ridge", "onehot", {"alpha": 10.0}, BASE),
@@ -56,17 +61,29 @@ def main() -> None:
     strategy = f"KFold({CV_FOLDS},seed={RANDOM_SEED})"
 
     oof: dict[str, np.ndarray] = {}
-    singles: dict[str, float] = {}
+    fold_mean: dict[str, float] = {}
     folds: dict[str, list[float]] = {}
 
+    cached = {}
+    if OOF_CACHE.exists():
+        with np.load(OOF_CACHE, allow_pickle=True) as data:
+            cached = {k: data[k] for k in data.files}
+        print(f"reusing cached out-of-fold predictions for: {sorted(cached)}\n")
+
     for label, (name, prep, params, cfg) in CANDIDATES.items():
+        if label in cached and len(cached[label]) == len(X_dev):
+            oof[label] = cached[label]
+            fold_mean[label] = float("nan")
+            folds[label] = []
+            print(f"{label:16s} loaded from cache")
+            continue
         model = build_model(name, feature_config=cfg, preprocessor=prep, seed=RANDOM_SEED, **params)
         res = cross_validate_model(
             model, X_dev, y_dev, name=label,
             n_splits=CV_FOLDS, n_repeats=1, seed=RANDOM_SEED, return_oof=True,
         )
         oof[label] = res.oof_pred
-        singles[label] = res.val_rmse
+        fold_mean[label] = res.val_rmse
         folds[label] = res.fold_val_rmse
         print(res.summary(), flush=True)
         tracker.log(
@@ -78,14 +95,28 @@ def main() -> None:
             notes="exp07 ensemble candidate (OOF generated)",
         )
 
-    best_single = min(singles, key=singles.get)
-    print(f"\nbest single model: {best_single} at {singles[best_single]:.3f}")
+    np.savez_compressed(OOF_CACHE, **oof, y_true=y)
+    print(f"\ncached out-of-fold predictions -> {OOF_CACHE.name}")
+
+    # ------------------------------------------------------------------ #
+    # Consistent baseline: pooled out-of-fold RMSE of each single model
+    # ------------------------------------------------------------------ #
+    pooled = {k: rmse(y, v) for k, v in oof.items()}
+    print("\n=== single models, both aggregations ===")
+    for k in sorted(pooled, key=pooled.get):
+        fm = fold_mean.get(k, float("nan"))
+        fm_text = f"{fm:8.3f}" if np.isfinite(fm) else "  cached"
+        print(f"  {k:16s} pooled OOF RMSE={pooled[k]:8.3f}   mean of fold RMSEs={fm_text}")
+    best_single = min(pooled, key=pooled.get)
+    print(f"\nbest single model (pooled): {best_single} at {pooled[best_single]:.3f}")
 
     print("\n=== how different are the members' errors? (residual correlation) ===")
     resid = pd.DataFrame({k: y - v for k, v in oof.items()})
     print(resid.corr().round(4).to_string())
 
-    print("\n=== blends over out-of-fold predictions ===")
+    # ------------------------------------------------------------------ #
+    # Blends, scored the same way
+    # ------------------------------------------------------------------ #
     rows = []
     names = list(oof)
     for size in range(2, len(names) + 1):
@@ -97,27 +128,48 @@ def main() -> None:
             rows.append(("nnls", "+".join(subset), r, weights))
 
     table = pd.DataFrame(rows, columns=["combiner", "members", "rmse", "weights"])
+    table["gain_vs_best_single"] = pooled[best_single] - table["rmse"]
     table = table.sort_values("rmse").reset_index(drop=True)
-    print(table.head(12).to_string(index=False))
+    print("\n=== blends (pooled OOF RMSE) ===")
+    print(table.head(10)[["combiner", "members", "rmse", "gain_vs_best_single"]].round(4).to_string(index=False))
 
-    best_blend = table.iloc[0]
-    gain = singles[best_single] - best_blend["rmse"]
-    print(f"\nbest blend  : {best_blend['combiner']} over {best_blend['members']}")
-    print(f"blend RMSE  : {best_blend['rmse']:.3f}")
-    print(f"best single : {singles[best_single]:.3f}  ({best_single})")
-    print(f"gain        : {gain:+.3f}")
-    if best_blend["weights"]:
-        print("weights     :", {k: round(v, 4) for k, v in best_blend["weights"].items() if v > 1e-6})
+    best = table.iloc[0]
+    print(f"\nbest blend  : {best['combiner']} over {best['members']}")
+    print(f"blend RMSE  : {best['rmse']:.3f}")
+    print(f"best single : {pooled[best_single]:.3f}  ({best_single})")
+    print(f"gain        : {best['gain_vs_best_single']:+.3f}")
+    if best["weights"]:
+        print("weights     :", {k: round(v, 4) for k, v in best["weights"].items() if v > 1e-6})
 
-    table.to_csv(Path(__file__).resolve().parents[1] / "experiments" / "exp07_blends.csv", index=False)
+    # ------------------------------------------------------------------ #
+    # Honest check: fit the weights on one half, score on the other
+    # ------------------------------------------------------------------ #
+    rng = np.random.default_rng(RANDOM_SEED)
+    half = rng.permutation(len(y))
+    a, b = half[: len(y) // 2], half[len(y) // 2 :]
+    members = best["members"].split("+")
+    fit_sub = {k: oof[k][a] for k in members}
+    w, _ = blend_search(fit_sub, y[a])
+    held = np.column_stack([oof[k][b] for k in members]) @ np.array([w[k] for k in members])
+    honest = rmse(y[b], held)
+    single_on_b = rmse(y[b], oof[best_single][b])
+    print("\n=== weights fitted on half the rows, scored on the other half ===")
+    print(f"  blend on held-out half  : {honest:.3f}")
+    print(f"  {best_single} on the same half : {single_on_b:.3f}")
+    print(f"  honest gain             : {single_on_b - honest:+.3f}")
+
+    table.drop(columns=["weights"]).to_csv(
+        Path(__file__).resolve().parents[1] / "experiments" / "exp07_blends.csv", index=False
+    )
     tracker.log(
-        model=f"blend[{best_blend['members']}]",
+        model=f"blend[{best['members']}]",
         features=BASE.enabled(), preprocessing="mixed",
-        hyperparameters={"combiner": best_blend["combiner"], "weights": best_blend["weights"]},
-        seed=RANDOM_SEED, validation_strategy=strategy + " OOF blend",
-        train_rmse=float("nan"), validation_rmse=best_blend["rmse"],
+        hyperparameters={"combiner": best["combiner"], "weights": best["weights"]},
+        seed=RANDOM_SEED, validation_strategy=strategy + " pooled OOF blend",
+        train_rmse=float("nan"), validation_rmse=float(best["rmse"]),
         train_mae=float("nan"), validation_mae=float("nan"),
-        notes=f"exp07 best blend; gain vs best single ({best_single}) = {gain:+.3f}",
+        notes=(f"exp07 best blend; pooled gain vs best single ({best_single}) "
+               f"= {best['gain_vs_best_single']:+.3f}; honest half-split gain = {single_on_b - honest:+.3f}"),
     )
 
 

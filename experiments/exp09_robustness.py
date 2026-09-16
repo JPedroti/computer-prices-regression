@@ -37,12 +37,14 @@ from src.utils import ExperimentTracker
 
 BASE = FeatureConfig()
 
-# label -> kwargs for build_model
+# label -> kwargs for build_model.
+# The three contenders that came out of the screening phase, plus the one-hot
+# Ridge as a sanity anchor with a known value.
 FINALISTS: dict[str, dict] = {
     "ridge|levels_plus a=100": dict(name="ridge", preprocessor="levels_plus", alpha=100.0),
     "ridge|levels a=10": dict(name="ridge", preprocessor="levels", alpha=10.0),
+    "catboost d6 it800": dict(name="cat", iterations=800, learning_rate=0.06, depth=6),
     "ridge|onehot a=10": dict(name="ridge", preprocessor="onehot", alpha=10.0),
-    "hgb": dict(name="hgb", max_iter=400, learning_rate=0.06),
 }
 
 
@@ -61,7 +63,10 @@ def main() -> None:
         train_rmses, val_maes, gaps = [], [], []
 
         for seed in ROBUSTNESS_SEEDS:
-            model = build_model(name, feature_config=BASE, seed=42, **kwargs)
+            # The seed drives both the fold partition and the model's own
+            # randomness, so this measures what actually matters: how the
+            # candidate behaves on a different draw of everything.
+            model = build_model(name, feature_config=BASE, seed=seed, **kwargs)
             res = cross_validate_model(
                 model, X_dev, y_dev, name=label,
                 n_splits=CV_FOLDS, n_repeats=1, seed=seed, return_oof=False,
