@@ -13,7 +13,8 @@ what was decided as a consequence.
   differences between models on shared folds have a standard error near 0.1.
   Absolute RMSEs from different splits are therefore **not** comparable; paired
   differences are.
-* **Robustness** — finalists re-scored over five fold partitions (25 folds).
+* **Robustness** — finalists re-scored over three fold partitions (15 folds),
+  with the seed driving both the partition and the model's own randomness.
 * **Overfitting holdout** — 16,000 rows, split off once with seed 42 and sealed.
   Used only for the official bootstrap rule, never to select anything.
 
@@ -311,6 +312,82 @@ boosters' deficit really was interaction capacity spent on noise.
 
 ---
 
+## exp10 — CatBoost tuning
+
+CatBoost was the only booster to beat the additive Ridge, so it was worth tuning
+— but along the directions the additive finding predicts should matter, not as a
+blind grid. Each configuration costs about six minutes, so the grid is eight
+entries (CLAUDE.md section 31).
+
+| Configuration | valRMSE | gap | paired diff vs reference |
+|---|---|---|---|
+| **depth 6, 1500 iters, lr 0.03** | **211.190** | +6.76 | **−0.193 ±0.031** |
+| depth 4, 1000 iters, lr 0.06 | 211.327 | +3.96 | −0.055 ±0.110 |
+| depth 6, 600 iters, lr 0.06 *(reference)* | 211.382 | +5.72 | — |
+| depth 5, 800 iters | 211.461 | +5.06 | +0.078 ±0.074 |
+| depth 4, 2000 iters, lr 0.03, l2 = 10 | 211.462 | +2.57 | +0.080 ±0.110 |
+| depth 6, l2 = 10 | 211.604 | +3.88 | +0.221 ±0.093 |
+| depth 6, one_hot_max_size = 64 | 211.615 | **+16.72** | +0.233 ±0.145 |
+| depth 6, l2 = 30 | 211.862 | +2.80 | +0.479 ±0.163 |
+
+Two things are worth reading off this table.
+
+**Depth barely matters, which is the additive result again.** Going from depth 6
+to depth 4 costs nothing measurable (−0.055 ±0.110) while nearly halving the
+train gap. A model that could use five-way interactions gains nothing from being
+allowed to.
+
+**The ordered target statistics are doing the work.** Forcing plain one-hot
+encoding of the categoricals (`one_hot_max_size = 64`) leaves the RMSE almost
+unchanged but triples the train gap, from +5.7 to +16.7, and makes the fit 15×
+faster. CatBoost's advantage over LightGBM here is its categorical handling and
+its symmetric trees, not extra capacity.
+
+Explicit regularisation (`l2_leaf_reg`) shrinks the gap but costs RMSE, so it is
+not used: the gap is already comfortable.
+
+---
+
+## exp07 — Ensembles
+
+Out-of-fold predictions were generated once per candidate on the shared folds and
+then combined offline.
+
+**A measurement bug worth recording.** The first version of this experiment
+compared a blend's *pooled* out-of-fold RMSE against a single model's *mean of
+per-fold RMSEs*. Those are different aggregations and differ by a few tenths
+here, because fold RMSEs are dominated by how many extreme prices each fold
+happens to receive. The comparison made the blend look worse than the best single
+model, which is impossible for a non-negative least squares blend fitted on those
+same predictions. Everything below is the pooled out-of-fold RMSE.
+
+| Model | pooled OOF RMSE | mean of fold RMSEs |
+|---|---|---|
+| CatBoost | **211.686** | 211.253 |
+| Ridge `levels_plus` | 212.341 | 211.920 |
+| HistGradientBoosting | 215.056 | 214.675 |
+| LightGBM | 215.494 | 215.114 |
+| Ridge `onehot` | 217.623 | 217.240 |
+
+| Blend | pooled OOF RMSE | gain vs best single |
+|---|---|---|
+| NNLS over all five | 211.308 | +0.378 |
+| **NNLS over Ridge + CatBoost** | **211.333** | **+0.353** |
+| simple average of Ridge + CatBoost | 211.375 | +0.311 |
+
+**Result.** Blending helps, but only a little, and essentially all of it comes
+from combining the additive Ridge with CatBoost: adding the other three members
+buys 0.025 RMSE. That is unsurprising given the residual correlations — Ridge and
+CatBoost correlate at 0.988, and every pair is above 0.94.
+
+Weights fitted and scored on the same vector are optimistic, so the check was
+repeated honestly: fit the weights on one half of the rows, score on the other.
+For the two-member blend the gain over CatBoost alone was **+0.42** in one
+direction and **+0.27** in the other, with weights of 0.34/0.66 and 0.40/0.60 —
+stable, and positive both ways.
+
+---
+
 ## exp11 — How much overfitting margin does each candidate have?
 
 The official rule is binary and worth 15 points, so what matters is not only
@@ -364,59 +441,31 @@ fair objection.
 
 ---
 
-## exp07 — Ensembles
+## exp09 — Robustness across seeds
 
-Out-of-fold predictions were generated once per candidate on the shared folds and
-then combined offline.
+Each finalist was re-scored over three fold partitions (15 folds in total). The
+blend is a fixed-weight combination of its members, so its fold predictions are
+the weighted sum of theirs — fitting each member once per fold gives all three
+candidates for the cost of two.
 
-**A measurement bug worth recording.** The first version of this experiment
-compared a blend's *pooled* out-of-fold RMSE against a single model's *mean of
-per-fold RMSEs*. Those are different aggregations and differ by a few tenths
-here, because fold RMSEs are dominated by how many extreme prices each fold
-happens to receive. The comparison made the blend look worse than the best single
-model, which is impossible for a non-negative least squares blend fitted on those
-same predictions. Everything below is the pooled out-of-fold RMSE.
+| Model | mean RMSE | sd across folds | sd across seed means | worst seed | mean gap |
+|---|---|---|---|---|---|
+| **blend** | **210.981** | 11.74 | 0.072 | 211.040 | +5.18 |
+| CatBoost | 211.335 | 11.69 | 0.076 | 211.403 | +7.52 |
+| Ridge `levels_plus` | 211.988 | 11.71 | 0.109 | 212.113 | +0.96 |
 
-| Model | pooled OOF RMSE | mean of fold RMSEs |
+**Paired per-fold differences against the blend:**
+
+| Model | difference | folds where it wins |
 |---|---|---|
-| CatBoost | **211.686** | 211.253 |
-| Ridge `levels_plus` | 212.341 | 211.920 |
-| HistGradientBoosting | 215.056 | 214.675 |
-| LightGBM | 215.494 | 215.114 |
-| Ridge `onehot` | 217.623 | 217.240 |
+| CatBoost | +0.354 ±0.034 | **0 of 15** |
+| Ridge `levels_plus` | +1.007 ±0.048 | **0 of 15** |
 
-| Blend | pooled OOF RMSE | gain vs best single |
-|---|---|---|
-| NNLS over all five | 211.308 | +0.378 |
-| **NNLS over Ridge + CatBoost** | **211.333** | **+0.353** |
-| simple average of Ridge + CatBoost | 211.375 | +0.311 |
-
-**Result.** Blending helps, but only a little, and essentially all of it comes
-from combining the additive Ridge with CatBoost: adding the other three members
-buys 0.025 RMSE. That is unsurprising given the residual correlations — Ridge and
-CatBoost correlate at 0.988, and every pair is above 0.94.
-
-Weights fitted and scored on the same vector are optimistic, so the check was
-repeated honestly: fit the weights on one half of the rows, score on the other.
-For the two-member blend the gain over CatBoost alone was **+0.42** in one
-direction and **+0.27** in the other, with weights of 0.34/0.66 and 0.40/0.60 —
-stable, and positive both ways.
-
----
-
-## exp12 — What does the train-only protocol cost?
-
-Section 17 requires the final model to be fitted on the training split alone, so
-the delivered model sees 64,000 rows instead of all 80,000. A learning curve with
-a fixed validation block measures that cost instead of assuming it away.
-
-The curve is flat at this end. Fitting `rmse² = a + b/n` over training sizes from
-4,000 to 52,000 rows gives an implied RMSE of 210.45 at n = 64,000 against 210.35
-at n = 80,000: **the protocol costs about 0.10 RMSE**.
-
-**Decision.** Follow section 17 literally. It costs a rounding error, and the
-alternative — shipping a model trained on all the data while reporting the rule
-from a split — buys nothing and invites a fair objection.
+The ordering is not a fluke of one partition: the blend is better on **every one
+of the fifteen folds**, against both alternatives. The seed-to-seed spread of
+each candidate's mean is under 0.11 RMSE, so the ranking is stable in exactly the
+sense CLAUDE.md section 15 asks about — the absolute spread across folds is large
+(±11.7), but that is the tail lottery, and it cancels in the paired comparison.
 
 ---
 
@@ -458,67 +507,3 @@ prediction to within 1e-6.
 
 The complexity added is two models with fixed weights, and it is paid for by a
 measured, out-of-sample gain — which is the standard section 16 asks for.
-
----
-
-## exp10 — CatBoost tuning
-
-CatBoost was the only booster to beat the additive Ridge, so it was worth tuning
-— but along the directions the additive finding predicts should matter, not as a
-blind grid. Each configuration costs about six minutes, so the grid is eight
-entries (CLAUDE.md section 31).
-
-| Configuration | valRMSE | gap | paired diff vs reference |
-|---|---|---|---|
-| **depth 6, 1500 iters, lr 0.03** | **211.190** | +6.76 | **−0.193 ±0.031** |
-| depth 4, 1000 iters, lr 0.06 | 211.327 | +3.96 | −0.055 ±0.110 |
-| depth 6, 600 iters, lr 0.06 *(reference)* | 211.382 | +5.72 | — |
-| depth 5, 800 iters | 211.461 | +5.06 | +0.078 ±0.074 |
-| depth 4, 2000 iters, lr 0.03, l2 = 10 | 211.462 | +2.57 | +0.080 ±0.110 |
-| depth 6, l2 = 10 | 211.604 | +3.88 | +0.221 ±0.093 |
-| depth 6, one_hot_max_size = 64 | 211.615 | **+16.72** | +0.233 ±0.145 |
-| depth 6, l2 = 30 | 211.862 | +2.80 | +0.479 ±0.163 |
-
-Two things are worth reading off this table.
-
-**Depth barely matters, which is the additive result again.** Going from depth 6
-to depth 4 costs nothing measurable (−0.055 ±0.110) while nearly halving the
-train gap. A model that could use five-way interactions gains nothing from being
-allowed to.
-
-**The ordered target statistics are doing the work.** Forcing plain one-hot
-encoding of the categoricals (`one_hot_max_size = 64`) leaves the RMSE almost
-unchanged but triples the train gap, from +5.7 to +16.7, and makes the fit 15×
-faster. CatBoost's advantage over LightGBM here is its categorical handling and
-its symmetric trees, not extra capacity.
-
-Explicit regularisation (`l2_leaf_reg`) shrinks the gap but costs RMSE, so it is
-not used: the gap is already comfortable.
-
----
-
-## exp09 — Robustness across seeds
-
-Each finalist was re-scored over three fold partitions (15 folds in total). The
-blend is a fixed-weight combination of its members, so its fold predictions are
-the weighted sum of theirs — fitting each member once per fold gives all three
-candidates for the cost of two.
-
-| Model | mean RMSE | sd across folds | sd across seed means | worst seed | mean gap |
-|---|---|---|---|---|---|
-| **blend** | **210.981** | 11.74 | 0.072 | 211.040 | +5.18 |
-| CatBoost | 211.335 | 11.69 | 0.076 | 211.403 | +7.52 |
-| Ridge `levels_plus` | 211.988 | 11.71 | 0.109 | 212.113 | +0.96 |
-
-**Paired per-fold differences against the blend:**
-
-| Model | difference | folds where it wins |
-|---|---|---|
-| CatBoost | +0.354 ±0.034 | **0 of 15** |
-| Ridge `levels_plus` | +1.007 ±0.048 | **0 of 15** |
-
-The ordering is not a fluke of one partition: the blend is better on **every one
-of the fifteen folds**, against both alternatives. The seed-to-seed spread of
-each candidate's mean is under 0.11 RMSE, so the ranking is stable in exactly the
-sense CLAUDE.md section 15 asks about — the absolute spread across folds is large
-(±11.7), but that is the tail lottery, and it cancels in the paired comparison.
