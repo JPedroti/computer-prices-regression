@@ -291,6 +291,59 @@ boosters' deficit really was interaction capacity spent on noise.
 
 ---
 
+## exp11 — How much overfitting margin does each candidate have?
+
+The official rule is binary and worth 15 points, so what matters is not only
+whether a candidate passes but by how much. A candidate that passes by a hair is
+a bad bet, because the margin depends on which rows land in validation.
+
+**The sealed holdout cannot be used for this comparison** — using it to choose
+between candidates would make it a selection set and void the final number. The
+rule is therefore rehearsed on *inner* splits of the development data (same 80/20
+shape, same bootstrap), repeated over three seeds.
+
+| Model | mean gap | mean margin | worst margin | passes |
+|---|---|---|---|---|
+| **Ridge `levels_plus`** | 5.48 | **+27.74** | **+25.20** | 3/3 |
+| Ridge `levels` | 5.63 | +27.63 | +25.05 | 3/3 |
+| CatBoost | 11.96 | +20.11 | +17.53 | 3/3 |
+| HistGradientBoosting | 21.24 | +9.40 | +7.50 | 3/3 |
+| **LightGBM** | 41.55 | **−12.96** | −15.49 | **0/3 — fails** |
+
+Margin = upper end of the train CI minus the lower end of the validation CI;
+positive means the intervals overlap.
+
+**This is the sharpest result in the project.** A perfectly ordinary,
+well-performing LightGBM — 215.11 RMSE, only 3 points behind the best model —
+**fails the overfitting criterion on every split** and would score 0 of those 15
+points. HistGradientBoosting passes, but with a margin of 7.5 on its worst split
+it is one unlucky partition away from failing.
+
+The additive Ridge passes with roughly three times HistGradientBoosting's
+buffer, and it does so *because* it is the right model for this data rather than
+by being deliberately hobbled. That is the happy case: the specification that
+minimises the error is also the one that satisfies the constraint.
+
+---
+
+## exp12 — What does the train-only protocol cost?
+
+Section 17 requires the final model to be fitted on the training split alone, so
+the delivered model sees 64,000 rows instead of all 80,000. A learning curve with
+a fixed validation block measures what that costs rather than assuming it away.
+
+The curve is essentially flat at this end: doubling the training data from 16,000
+to 32,000 rows buys about 1 RMSE point, and the last increments buy a few
+hundredths. Extrapolating `rmse² = a + b/n`, the difference between training on
+64,000 and on 80,000 rows is a fraction of a point.
+
+**Decision.** Follow section 17 literally. The protocol costs almost nothing and
+is the defensible choice; the alternative — shipping a model trained on all the
+data while reporting the rule from a split — buys a rounding error and invites a
+fair objection.
+
+---
+
 ## exp07 — Ensembles
 
 *(in progress)*

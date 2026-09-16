@@ -64,9 +64,21 @@ computer-prices-regression/
 │   ├── inference.py     end-to-end prediction on new CSVs
 │   └── utils.py         seeding and experiment tracking
 ├── experiments/
-│   ├── exp01..exp09_*.py   one script per investigation
-│   ├── results.csv         every run, with the full schema
-│   └── experiment_log.md   hypotheses, findings and decisions
+│   ├── exp01_baselines.py            every model family, one screening pass
+│   ├── exp02_structure.py            what shape is the generating process?
+│   ├── exp03_tail_and_noise.py       the error tail and the noise floor
+│   ├── exp04_additive_spec.py        choosing the additive specification
+│   ├── exp05_feature_ablation.py     one run per feature family
+│   ├── exp06_interactions.py         interactions, tested directly
+│   ├── exp07_ensembles.py            blending and stacking over OOF predictions
+│   ├── exp08_additive_boosting.py    boosting constrained to be additive
+│   ├── exp09_robustness.py           finalists across five fold partitions
+│   ├── exp10_catboost_tuning.py      targeted tuning of the strongest booster
+│   ├── exp11_overfitting_margin.py   rehearsing the official rule on inner splits
+│   ├── exp12_learning_curve.py       what the train-only protocol costs
+│   ├── build_notebook.py             generates the narrative notebook
+│   ├── results.csv                   every run, with the full schema
+│   └── experiment_log.md             hypotheses, findings and decisions
 ├── models/
 │   ├── final_model.joblib           the deliverable
 │   └── final_model_metadata.json    metrics and provenance

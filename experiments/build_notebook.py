@@ -422,12 +422,14 @@ does**, not what causes prices in the world; nothing here is a causal claim.
     code("""
 from src.explain import compute_shap, global_report, local_report
 
-shap_values, transformed, display_rows, estimator = compute_shap(final_model, X_hold, sample=1500)
-print("estimator:", type(estimator).__name__, "| transformed columns:", transformed.shape[1])
+# The saturated representation spreads one feature over many columns, and a
+# weighted ensemble spreads it over members too. SHAP values are additive, so
+# both are summed back to one number per engineered feature.
+shap_result = compute_shap(final_model, X_hold, sample=1500)
+print("estimator:", shap_result.estimator_name)
+print("features :", shap_result.by_feature.shape[1])
 
-# The saturated representation spreads one feature over many columns, so the
-# SHAP values are summed back onto the source feature to be readable.
-ranking, column_ranking = global_report(shap_values, transformed)
+ranking = global_report(shap_result)
 ranking.head(20).round(2)
 """),
     code("""
@@ -439,10 +441,19 @@ ax.set_title("Which features move this model's predictions most")
 plt.tight_layout(); plt.show()
 """),
     md("""
-The ranking is dominated by the component specifications — GPU and CPU tier,
-storage, RAM, display type — which is what one would expect of a machine's
-price. Read this as a description of the fitted model's behaviour: it says which
-inputs the model leans on, not which of them *cause* a price in the market.
+The ranking is led by the component specifications — GPU tier, display type,
+CPU tier and clock — which is what one would expect to drive a machine's price.
+
+One contrast is worth pausing on. In section 6, `ram_gb` had the **highest**
+rank correlation with price (0.79), yet here it sits well below `gpu_tier`.
+There is no contradiction: a correlation is *marginal*, measuring `ram_gb`
+against price while ignoring everything else, and machines with a lot of RAM
+also tend to have a strong GPU and a fast CPU. SHAP is *conditional*: it asks
+what `ram_gb` adds once the rest of the specification is already known, and the
+answer is much less. The two numbers answer different questions.
+
+Read all of this as a description of the fitted model's behaviour — which inputs
+it leans on — not as evidence about what causes prices in the market.
 """),
     md("""
 ## 13. SHAP — local
@@ -468,7 +479,7 @@ ax.barh([f"{f} = {v}" for f, v in zip(head['feature'], head['value'])],
         head['shap'], color=np.where(head['shap'] < 0, "indianred", "steelblue"))
 ax.axvline(0, color="black", lw=1)
 ax.set_xlabel("contribution to the predicted price")
-ax.set_title(f"Why the model predicted {base + contrib['shap'].sum():,.0f} for observation {ROW}")
+ax.set_title(f"Why the model predicted {shap_result.prediction(ROW):,.0f} for observation {ROW}")
 plt.tight_layout(); plt.show()
 """),
     md("""

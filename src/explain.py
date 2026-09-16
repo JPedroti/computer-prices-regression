@@ -6,19 +6,25 @@ SHAP attributes a model's prediction to its inputs; it describes what *the
 model* does, not what causes prices in the world. No causal reading is implied
 anywhere in this module or in the figures it writes.
 
-A note on presentation. The final model uses a saturated representation, so one
-conceptual feature such as ``brand`` is spread over many columns: a dummy per
-level, sometimes the original numeric term, sometimes a missingness indicator.
-Read column by column, the attribution is fragmented and hard to interpret.
-SHAP values are additive, so this module also reports the values summed back
-onto the source feature, which is the view a reader actually wants. Both views
-are produced; the aggregated one is the headline.
+Two presentation decisions, both of which follow from SHAP values being additive:
+
+* **Columns are summed back onto their source feature.** The saturated
+  representation spreads one conceptual feature such as ``brand`` over a dummy
+  per level, sometimes the original numeric term and sometimes a missingness
+  indicator. Read column by column the attribution is fragmented; summed per
+  feature it is readable, and the sum is exact.
+* **A weighted ensemble is explained member by member.** Its output is a linear
+  combination of its members, so the SHAP values of the ensemble are the same
+  linear combination of the members' SHAP values. Each member is explained with
+  the explainer that is exact for it -- linear for the Ridge, tree for CatBoost
+  -- and the results are combined with the ensemble's own weights.
 
     python -m src.explain
 """
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib
@@ -33,6 +39,7 @@ from .data import load_dev_holdout
 from .inference import load_model
 
 DEFAULT_SAMPLE = 2000
+_LINEAR = {"Ridge", "LinearRegression", "Lasso", "ElasticNet"}
 
 
 # --------------------------------------------------------------------------- #
@@ -50,11 +57,25 @@ def source_feature(name: str) -> str:
 
 def aggregate_by_feature(values: np.ndarray, columns) -> pd.DataFrame:
     """Sum the SHAP values of every transformed column onto its source feature."""
-    frame = pd.DataFrame(np.asarray(values), columns=list(columns))
+    frame = pd.DataFrame(np.asarray(values), columns=[str(c) for c in columns])
     groups: dict[str, list[str]] = {}
     for col in frame.columns:
         groups.setdefault(source_feature(col), []).append(col)
     return pd.DataFrame({feat: frame[cols].sum(axis=1) for feat, cols in groups.items()})
+
+
+@dataclass
+class ShapResult:
+    """SHAP values expressed per engineered feature, plus what is needed to plot."""
+
+    by_feature: pd.DataFrame        # one column per engineered feature
+    base_value: float
+    display_rows: pd.DataFrame      # engineered feature values, for readable labels
+    estimator_name: str
+    per_column: tuple | None = None  # (array, frame) for single models, for the beeswarm
+
+    def prediction(self, row: int) -> float:
+        return float(self.base_value + self.by_feature.iloc[row].sum())
 
 
 # --------------------------------------------------------------------------- #
@@ -73,12 +94,7 @@ def _split_pipeline(model):
 
 
 def _engineered_frame(prep, raw_rows: pd.DataFrame) -> pd.DataFrame:
-    """Values at the level SHAP names refer to, i.e. after feature engineering.
-
-    ``source_feature`` maps transformed columns onto *engineered* names such as
-    ``res_pixels``, which do not exist in the raw input, so the display frame has
-    to be taken after the feature step and before the column encoding.
-    """
+    """Values at the level SHAP feature names refer to, i.e. after engineering."""
     from .features import FeatureEngineer
 
     def find(obj):
@@ -104,17 +120,8 @@ def _feature_names(prep, n_columns: int) -> list[str]:
     return [f"f{i}" for i in range(n_columns)]
 
 
-def compute_shap(model, X: pd.DataFrame, sample: int = DEFAULT_SAMPLE, seed: int = RANDOM_SEED):
-    """Compute SHAP values on a random sample of rows.
-
-    Returns ``(values, transformed, raw_rows, estimator)``. The explainer matches
-    the estimator: exact for linear models, exact for tree ensembles.
-    """
+def _explain_single(model, raw_rows: pd.DataFrame) -> ShapResult:
     import shap
-
-    rng = np.random.default_rng(seed)
-    idx = rng.choice(len(X), size=min(sample, len(X)), replace=False)
-    raw_rows = X.iloc[idx].reset_index(drop=True)
 
     prep, estimator = _split_pipeline(model)
     transformed = prep.transform(raw_rows)
@@ -123,101 +130,135 @@ def compute_shap(model, X: pd.DataFrame, sample: int = DEFAULT_SAMPLE, seed: int
             np.asarray(transformed), columns=_feature_names(prep, np.shape(transformed)[1])
         )
     transformed = transformed.reset_index(drop=True)
-    display_rows = _engineered_frame(prep, raw_rows).reset_index(drop=True)
 
     name = type(estimator).__name__
-    if name in {"Ridge", "LinearRegression", "Lasso", "ElasticNet"}:
+    if name in _LINEAR:
         explainer = shap.LinearExplainer(estimator, transformed)
+    elif name == "CatBoostNative":
+        # The wrapper holds the real booster and the encoding it expects.
+        transformed = estimator._prepare(transformed)
+        explainer = shap.TreeExplainer(estimator.model_)
     else:
         explainer = shap.TreeExplainer(estimator)
 
     values = explainer(transformed)
-    return values, transformed, display_rows, estimator
+    arr = values.values if hasattr(values, "values") else np.asarray(values)
+    base = float(np.asarray(values.base_values).ravel()[0]) if hasattr(values, "base_values") else 0.0
+
+    return ShapResult(
+        by_feature=aggregate_by_feature(arr, transformed.columns),
+        base_value=base,
+        display_rows=_engineered_frame(prep, raw_rows).reset_index(drop=True),
+        estimator_name=name,
+        per_column=(arr, transformed),
+    )
+
+
+def compute_shap(
+    model, X: pd.DataFrame, sample: int = DEFAULT_SAMPLE, seed: int = RANDOM_SEED
+) -> ShapResult:
+    """SHAP values for any model this project builds, expressed per feature."""
+    from .ensemble import WeightedEnsemble
+
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(X), size=min(sample, len(X)), replace=False)
+    raw_rows = X.iloc[idx].reset_index(drop=True)
+
+    if not isinstance(model, WeightedEnsemble):
+        return _explain_single(model, raw_rows)
+
+    # Ensemble: explain each member, then combine with the ensemble's weights.
+    parts, bases, names = [], [], []
+    for (label, _), fitted, weight in zip(model.members, model.fitted_, model.weights_):
+        part = _explain_single(fitted, raw_rows)
+        parts.append(part.by_feature * float(weight))
+        bases.append(part.base_value * float(weight))
+        names.append(f"{label}({float(weight):.3f})")
+
+    features = sorted(set().union(*[set(p.columns) for p in parts]))
+    combined = parts[0].reindex(columns=features, fill_value=0.0)
+    for part in parts[1:]:
+        combined = combined.add(part.reindex(columns=features, fill_value=0.0), fill_value=0.0)
+
+    display = _engineered_frame(_split_pipeline(model.fitted_[0])[0], raw_rows).reset_index(drop=True)
+    return ShapResult(
+        by_feature=combined,
+        base_value=float(sum(bases)),
+        display_rows=display,
+        estimator_name="WeightedEnsemble[" + ", ".join(names) + "]",
+        per_column=None,
+    )
 
 
 # --------------------------------------------------------------------------- #
 # Global analysis
 # --------------------------------------------------------------------------- #
-def global_report(values, transformed: pd.DataFrame, top: int = 20, out_dir: Path = FIGURES_DIR):
-    """Global feature ranking (aggregated and per-column) plus summary plots."""
-    import shap
-
+def global_report(result: ShapResult, top: int = 20, out_dir: Path = FIGURES_DIR):
+    """Global feature ranking plus summary plots."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    arr = values.values if hasattr(values, "values") else np.asarray(values)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    by_feature = aggregate_by_feature(arr, transformed.columns)
     ranking = (
         pd.DataFrame(
             {
-                "feature": by_feature.columns,
-                "mean_abs_shap": by_feature.abs().mean(axis=0).to_numpy(),
-                "mean_shap": by_feature.mean(axis=0).to_numpy(),
+                "feature": result.by_feature.columns,
+                "mean_abs_shap": result.by_feature.abs().mean(axis=0).to_numpy(),
+                "mean_shap": result.by_feature.mean(axis=0).to_numpy(),
             }
         )
         .sort_values("mean_abs_shap", ascending=False)
         .reset_index(drop=True)
     )
 
-    # Headline plot: aggregated importance, one bar per real feature.
     head = ranking.head(top).iloc[::-1]
     fig, ax = plt.subplots(figsize=(9, max(5, 0.35 * len(head))))
     ax.barh(head["feature"], head["mean_abs_shap"], color="steelblue")
-    ax.set_xlabel("mean |SHAP| (currency units of price)")
+    ax.set_xlabel("mean |SHAP| (in price units)")
     ax.set_title("SHAP global importance, summed per feature")
     plt.tight_layout()
     fig.savefig(out_dir / "shap_global_by_feature.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # Per-column beeswarm: shows the direction of each individual level's effect.
-    plt.figure()
-    shap.summary_plot(arr, transformed, max_display=top, show=False, plot_size=(10, 8))
-    plt.title("SHAP beeswarm over transformed columns")
-    plt.tight_layout()
-    plt.savefig(out_dir / "shap_global_beeswarm.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    if result.per_column is not None:
+        import shap
 
-    column_ranking = (
+        arr, transformed = result.per_column
+        plt.figure()
+        shap.summary_plot(arr, transformed, max_display=top, show=False, plot_size=(10, 8))
+        plt.title("SHAP beeswarm over transformed columns")
+        plt.tight_layout()
+        plt.savefig(out_dir / "shap_global_beeswarm.png", dpi=150, bbox_inches="tight")
+        plt.close()
+
         pd.DataFrame(
             {
-                "column": transformed.columns,
+                "column": [str(c) for c in transformed.columns],
                 "mean_abs_shap": np.abs(arr).mean(axis=0),
                 "mean_shap": arr.mean(axis=0),
             }
+        ).sort_values("mean_abs_shap", ascending=False).to_csv(
+            REPORTS_DIR / "shap_global_ranking_by_column.csv", index=False
         )
-        .sort_values("mean_abs_shap", ascending=False)
-        .reset_index(drop=True)
-    )
 
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     ranking.to_csv(REPORTS_DIR / "shap_global_ranking.csv", index=False)
-    column_ranking.to_csv(REPORTS_DIR / "shap_global_ranking_by_column.csv", index=False)
-    return ranking, column_ranking
+    return ranking
 
 
 # --------------------------------------------------------------------------- #
 # Local analysis
 # --------------------------------------------------------------------------- #
-def local_report(
-    values,
-    transformed: pd.DataFrame,
-    raw_rows: pd.DataFrame,
-    row: int = 0,
-    out_dir: Path = FIGURES_DIR,
-):
-    """Explain one observation: contributions summed per feature, with raw values."""
+def local_report(result: ShapResult, row: int = 0, out_dir: Path = FIGURES_DIR):
+    """Explain one observation: contributions per feature, with readable values."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    arr = values.values if hasattr(values, "values") else np.asarray(values)
-    base = float(np.asarray(values.base_values).ravel()[row]) if hasattr(values, "base_values") else 0.0
 
-    by_feature = aggregate_by_feature(arr[[row]], transformed.columns).iloc[0]
-    raw = raw_rows.iloc[row]
+    values = result.by_feature.iloc[row]
+    raw = result.display_rows.iloc[row]
     contrib = (
         pd.DataFrame(
             {
-                "feature": by_feature.index,
-                # The value the reader recognises, not the scaled one.
-                "value": [raw.get(f, "-") for f in by_feature.index],
-                "shap": by_feature.to_numpy(),
+                "feature": values.index,
+                "value": [raw.get(f, "-") for f in values.index],
+                "shap": values.to_numpy(),
             }
         )
         .assign(abs_shap=lambda d: d["shap"].abs())
@@ -232,13 +273,13 @@ def local_report(
     ax.axvline(0, color="black", lw=1)
     ax.set_xlabel("SHAP contribution to the predicted price")
     ax.set_title(
-        f"Observation {row}: base {base:,.0f} -> prediction {base + contrib['shap'].sum():,.0f}"
+        f"Observation {row}: base {result.base_value:,.0f} -> prediction {result.prediction(row):,.0f}"
     )
     plt.tight_layout()
     fig.savefig(out_dir / f"shap_local_row{row}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    return base, contrib
+    return result.base_value, contrib
 
 
 def main() -> None:
@@ -248,22 +289,21 @@ def main() -> None:
     args = parser.parse_args()
 
     model = load_model()
-    _, _, X_hold, y_hold = load_dev_holdout()
+    _, _, X_hold, _ = load_dev_holdout()
     print(f"explaining on {min(args.sample, len(X_hold))} holdout rows")
 
-    values, transformed, raw_rows, estimator = compute_shap(model, X_hold, sample=args.sample)
-    print(f"estimator: {type(estimator).__name__}   transformed columns: {transformed.shape[1]}")
+    result = compute_shap(model, X_hold, sample=args.sample)
+    print(f"estimator: {result.estimator_name}   features: {result.by_feature.shape[1]}")
 
-    ranking, column_ranking = global_report(values, transformed)
+    ranking = global_report(result)
     print("\n=== SHAP global ranking, summed per feature (top 20) ===")
     print(ranking.head(20).round(2).to_string(index=False))
 
     for row in args.rows:
-        base, contrib = local_report(values, transformed, raw_rows, row=row)
-        pred = base + contrib["shap"].sum()
+        base, contrib = local_report(result, row=row)
         print(f"\n=== SHAP local explanation, row {row} ===")
         print(f"base value (mean prediction) = {base:.2f}")
-        print(f"model prediction             = {pred:.2f}")
+        print(f"model prediction             = {result.prediction(row):.2f}")
         print("\nfeatures pushing the prediction UP:")
         print(contrib[contrib["shap"] > 0].head(8)[["feature", "value", "shap"]].round(2).to_string(index=False))
         print("\nfeatures pushing the prediction DOWN:")

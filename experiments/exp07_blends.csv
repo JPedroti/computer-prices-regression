@@ -1,53 +1,53 @@
-combiner,members,rmse,weights
-nnls,ridge_levels+ridge_onehot+hgb+lgbm+cat,211.30830691075747,"{'ridge_levels': np.float64(0.357276), 'ridge_onehot': np.float64(0.008236), 'hgb': np.float64(0.035149), 'lgbm': np.float64(0.052476), 'cat': np.float64(0.546864)}"
-nnls,ridge_levels+hgb+lgbm+cat,211.30868398516338,"{'ridge_levels': np.float64(0.364973), 'hgb': np.float64(0.035103), 'lgbm': np.float64(0.052305), 'cat': np.float64(0.547619)}"
-nnls,ridge_levels+ridge_onehot+lgbm+cat,211.31228530941712,"{'ridge_levels': np.float64(0.358876), 'ridge_onehot': np.float64(0.008122), 'lgbm': np.float64(0.066691), 'cat': np.float64(0.566311)}"
-nnls,ridge_levels+lgbm+cat,211.31265346862622,"{'ridge_levels': np.float64(0.366465), 'lgbm': np.float64(0.066504), 'cat': np.float64(0.567031)}"
-nnls,ridge_levels+ridge_onehot+hgb+cat,211.31860838486466,"{'ridge_levels': np.float64(0.360251), 'ridge_onehot': np.float64(0.007518), 'hgb': np.float64(0.059502), 'cat': np.float64(0.572728)}"
-nnls,ridge_levels+hgb+cat,211.318921204889,"{'ridge_levels': np.float64(0.367271), 'hgb': np.float64(0.059387), 'cat': np.float64(0.573341)}"
-nnls,ridge_levels+ridge_onehot+cat,211.33270495329947,"{'ridge_levels': np.float64(0.365267), 'ridge_onehot': np.float64(0.006876), 'cat': np.float64(0.627857)}"
-nnls,ridge_levels+cat,211.3329683873395,"{'ridge_levels': np.float64(0.371679), 'cat': np.float64(0.628321)}"
-average,ridge_levels+cat,211.37516963806266,
-nnls,ridge_onehot+hgb+lgbm+cat,211.5414167087123,"{'ridge_onehot': np.float64(0.116211), 'hgb': np.float64(0.044252), 'lgbm': np.float64(0.062424), 'cat': np.float64(0.777113)}"
-nnls,ridge_onehot+lgbm+cat,211.54776383777278,"{'ridge_onehot': np.float64(0.116677), 'lgbm': np.float64(0.080398), 'cat': np.float64(0.802926)}"
-nnls,ridge_onehot+hgb+cat,211.55597578385323,"{'ridge_onehot': np.float64(0.116427), 'hgb': np.float64(0.073358), 'cat': np.float64(0.810215)}"
-nnls,ridge_onehot+cat,211.57751359647295,"{'ridge_onehot': np.float64(0.117508), 'cat': np.float64(0.882492)}"
-average,ridge_levels+hgb+cat,211.62008552212737,
-average,ridge_levels+lgbm+cat,211.6397869725297,
-nnls,hgb+lgbm+cat,211.64762352303123,"{'hgb': np.float64(0.047197), 'lgbm': np.float64(0.063288), 'cat': np.float64(0.889515)}"
-nnls,lgbm+cat,211.65489636375162,"{'lgbm': np.float64(0.082467), 'cat': np.float64(0.917533)}"
-nnls,hgb+cat,211.66254855448756,"{'hgb': np.float64(0.076712), 'cat': np.float64(0.923288)}"
-nnls,ridge_levels+ridge_onehot+hgb+lgbm,211.75408837684805,"{'ridge_levels': np.float64(0.644572), 'ridge_onehot': np.float64(0.021427), 'hgb': np.float64(0.173798), 'lgbm': np.float64(0.160203)}"
-nnls,ridge_levels+hgb+lgbm,211.75664623356948,"{'ridge_levels': np.float64(0.665677), 'hgb': np.float64(0.174176), 'lgbm': np.float64(0.160147)}"
-average,ridge_levels+ridge_onehot+hgb+lgbm+cat,211.81084388429022,
-average,ridge_levels+ridge_onehot+lgbm+cat,211.83170872648168,
-average,ridge_levels+ridge_onehot+hgb+cat,211.834404571629,
-average,ridge_levels+hgb+lgbm+cat,211.84831789130268,
-nnls,ridge_levels+ridge_onehot+hgb,211.86028759779754,"{'ridge_levels': np.float64(0.700578), 'ridge_onehot': np.float64(0.02111), 'hgb': np.float64(0.278312)}"
-nnls,ridge_levels+hgb,211.86275722291916,"{'ridge_levels': np.float64(0.721352), 'hgb': np.float64(0.278648)}"
-nnls,ridge_levels+ridge_onehot+lgbm,211.8676742191975,"{'ridge_levels': np.float64(0.712537), 'ridge_onehot': np.float64(0.02347), 'lgbm': np.float64(0.263994)}"
-nnls,ridge_levels+lgbm,211.87076337099944,"{'ridge_levels': np.float64(0.735821), 'lgbm': np.float64(0.264179)}"
-average,ridge_levels+ridge_onehot+cat,212.12444739856522,
-average,ridge_levels+hgb,212.16579359721567,
-average,ridge_onehot+hgb+lgbm+cat,212.16874572029164,
-average,ridge_levels+ridge_onehot+hgb+lgbm,212.20061969563952,
-average,ridge_onehot+hgb+cat,212.21078838074118,
-average,ridge_onehot+lgbm+cat,212.21987659416905,
-average,ridge_levels+lgbm,212.245632162034,
-average,ridge_levels+hgb+lgbm,212.33733271805553,
-nnls,ridge_levels+ridge_onehot,212.3377317190426,"{'ridge_levels': np.float64(0.974068), 'ridge_onehot': np.float64(0.025932)}"
-average,hgb+cat,212.38020503614146,
-average,ridge_levels+ridge_onehot+hgb,212.43343247592784,
-average,ridge_levels+ridge_onehot+lgbm,212.444471957002,
-average,lgbm+cat,212.45555154268658,
-average,hgb+lgbm+cat,212.5984413034964,
-average,ridge_onehot+cat,212.72640397325497,
-nnls,ridge_onehot+hgb+lgbm,212.8972006445613,"{'ridge_onehot': np.float64(0.331089), 'hgb': np.float64(0.357854), 'lgbm': np.float64(0.311057)}"
-average,ridge_onehot+hgb+lgbm,212.89980239342748,
-nnls,ridge_onehot+hgb,213.33009374086387,"{'ridge_onehot': np.float64(0.387317), 'hgb': np.float64(0.612683)}"
-nnls,ridge_onehot+lgbm,213.4368932020975,"{'ridge_onehot': np.float64(0.411505), 'lgbm': np.float64(0.588495)}"
-average,ridge_onehot+hgb,213.47675279507428,
-average,ridge_onehot+lgbm,213.53249160254734,
-average,ridge_levels+ridge_onehot,213.60183163802037,
-nnls,hgb+lgbm,214.06335410938772,"{'hgb': np.float64(0.545718), 'lgbm': np.float64(0.454282)}"
-average,hgb+lgbm,214.07341156220136,
+combiner,members,rmse,gain_vs_best_single
+nnls,ridge_levels+ridge_onehot+hgb+lgbm+cat,211.30830691075747,0.37788088725284297
+nnls,ridge_levels+hgb+lgbm+cat,211.30868398516338,0.3775038128469248
+nnls,ridge_levels+ridge_onehot+lgbm+cat,211.31228530941712,0.3739024885931883
+nnls,ridge_levels+lgbm+cat,211.31265346862622,0.3735343293840856
+nnls,ridge_levels+ridge_onehot+hgb+cat,211.31860838486466,0.36757941314564846
+nnls,ridge_levels+hgb+cat,211.318921204889,0.3672665931213146
+nnls,ridge_levels+ridge_onehot+cat,211.33270495329947,0.35348284471083957
+nnls,ridge_levels+cat,211.3329683873395,0.3532194106708175
+average,ridge_levels+cat,211.37516963806266,0.3110181599476505
+nnls,ridge_onehot+hgb+lgbm+cat,211.5414167087123,0.1447710892980183
+nnls,ridge_onehot+lgbm+cat,211.54776383777278,0.13842396023753167
+nnls,ridge_onehot+hgb+cat,211.55597578385323,0.13021201415708106
+nnls,ridge_onehot+cat,211.57751359647295,0.10867420153735452
+average,ridge_levels+hgb+cat,211.62008552212737,0.06610227588294038
+average,ridge_levels+lgbm+cat,211.6397869725297,0.046400825480617414
+nnls,hgb+lgbm+cat,211.64762352303123,0.03856427497908044
+nnls,lgbm+cat,211.65489636375162,0.03129143425869074
+nnls,hgb+cat,211.66254855448756,0.023639243522751485
+nnls,ridge_levels+ridge_onehot+hgb+lgbm,211.75408837684805,-0.0679005788377367
+nnls,ridge_levels+hgb+lgbm,211.75664623356948,-0.07045843555917486
+average,ridge_levels+ridge_onehot+hgb+lgbm+cat,211.81084388429022,-0.12465608627991287
+average,ridge_levels+ridge_onehot+lgbm+cat,211.83170872648168,-0.14552092847137033
+average,ridge_levels+ridge_onehot+hgb+cat,211.834404571629,-0.14821677361868524
+average,ridge_levels+hgb+lgbm+cat,211.84831789130268,-0.16213009329237593
+nnls,ridge_levels+ridge_onehot+hgb,211.86028759779754,-0.17409979978722845
+nnls,ridge_levels+hgb,211.86275722291916,-0.1765694249088483
+nnls,ridge_levels+ridge_onehot+lgbm,211.8676742191975,-0.18148642118720204
+nnls,ridge_levels+lgbm,211.87076337099944,-0.1845755729891323
+average,ridge_levels+ridge_onehot+cat,212.12444739856522,-0.43825960055491464
+average,ridge_levels+hgb,212.16579359721567,-0.47960579920535906
+average,ridge_onehot+hgb+lgbm+cat,212.16874572029164,-0.4825579222813303
+average,ridge_levels+ridge_onehot+hgb+lgbm,212.20061969563952,-0.5144318976292084
+average,ridge_onehot+hgb+cat,212.21078838074118,-0.5246005827308693
+average,ridge_onehot+lgbm+cat,212.21987659416905,-0.5336887961587422
+average,ridge_levels+lgbm,212.245632162034,-0.5594443640237046
+average,ridge_levels+hgb+lgbm,212.33733271805553,-0.6511449200452262
+nnls,ridge_levels+ridge_onehot,212.3377317190426,-0.6515439210322995
+average,hgb+cat,212.38020503614146,-0.6940172381311527
+average,ridge_levels+ridge_onehot+hgb,212.43343247592784,-0.7472446779175357
+average,ridge_levels+ridge_onehot+lgbm,212.444471957002,-0.7582841589916995
+average,lgbm+cat,212.45555154268658,-0.7693637446762693
+average,hgb+lgbm+cat,212.5984413034964,-0.9122535054860919
+average,ridge_onehot+cat,212.72640397325497,-1.040216175244666
+nnls,ridge_onehot+hgb+lgbm,212.8972006445613,-1.2110128465510002
+average,ridge_onehot+hgb+lgbm,212.89980239342748,-1.2136145954171695
+nnls,ridge_onehot+hgb,213.33009374086387,-1.6439059428535643
+nnls,ridge_onehot+lgbm,213.4368932020975,-1.7507054040871992
+average,ridge_onehot+hgb,213.47675279507428,-1.7905649970639672
+average,ridge_onehot+lgbm,213.53249160254734,-1.8463038045370297
+average,ridge_levels+ridge_onehot,213.60183163802037,-1.9156438400100626
+nnls,hgb+lgbm,214.06335410938772,-2.377166311377408
+average,hgb+lgbm,214.07341156220136,-2.3872237641910488

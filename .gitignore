@@ -32,3 +32,6 @@ Thumbs.db
 *.db-journal
 scratch/
 tmp/
+
+# Regenerable experiment caches
+experiments/exp07_oof.npz
