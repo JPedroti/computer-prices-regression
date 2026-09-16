@@ -116,6 +116,31 @@ def test_unseen_categories_do_not_break_inference(trained, new_data):
     assert np.isfinite(preds).all()
 
 
+def test_column_order_does_not_matter(trained, new_data):
+    """A new file may list the same columns in a different order."""
+    path, _ = trained
+    model = load_model(path)
+
+    straight = predict_frame(new_data, model=model).to_numpy()
+    reordered = new_data[list(np.random.default_rng(0).permutation(new_data.columns))]
+    shuffled = predict_frame(reordered, model=model).to_numpy()
+
+    np.testing.assert_allclose(straight, shuffled, rtol=1e-10)
+
+
+def test_unexpected_extra_column_is_ignored(trained, new_data):
+    """An unknown column must not change the predictions or break the pipeline."""
+    path, _ = trained
+    model = load_model(path)
+
+    straight = predict_frame(new_data, model=model).to_numpy()
+    extended = new_data.copy()
+    extended["column_that_did_not_exist_at_training_time"] = 1.23
+    with_extra = predict_frame(extended, model=model).to_numpy()
+
+    np.testing.assert_allclose(straight, with_extra, rtol=1e-10)
+
+
 def test_no_retraining_is_needed(trained, new_data):
     """Loading and predicting must not refit: two loads give identical output."""
     path, _ = trained
