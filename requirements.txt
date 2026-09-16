@@ -19,3 +19,11 @@ shap>=0.45
 # Plots
 matplotlib>=3.8
 seaborn>=0.13
+
+# Notebook (to run notebooks/01_exploration_and_modeling.ipynb)
+jupyter>=1.0
+nbconvert>=7.0
+ipykernel>=6.29
+
+# Tests
+pytest>=8.0

@@ -61,15 +61,17 @@ class AddInteractions(BaseEstimator, TransformerMixin):
     the result is exactly a full interaction of the two factors.
     """
 
+    # Stored exactly as given: sklearn's clone checks constructor parameters by
+    # identity, so `pairs or []` would break cloning for an empty list.
     def __init__(self, pairs: list[tuple[str, str]] | None = None):
-        self.pairs = pairs or []
+        self.pairs = pairs
 
     def fit(self, X: pd.DataFrame, y=None) -> "AddInteractions":
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         out = X.copy()
-        for a, b in self.pairs:
+        for a, b in self.pairs or []:
             if a in out.columns and b in out.columns:
                 ka = out[a].astype("string").fillna("NA")
                 kb = out[b].astype("string").fillna("NA")

@@ -125,6 +125,14 @@ Reported values are in `models/final_model_metadata.json`.
 
 ## Reproducibility
 
+Developed and tested with Python 3.11.9 and:
+
+```text
+numpy 2.4.6        pandas 3.0.5       scikit-learn 1.9.0   scipy 1.17.1
+lightgbm 4.7.0     xgboost 3.2.0      catboost 1.2.10      shap 0.51.0
+optuna 5.0.0       joblib 1.5.3       matplotlib 3.11.1    seaborn 0.13.2
+```
+
 * All seeds are fixed in `src/config.py` and applied through `src.utils.set_seed`.
 * Every learned transformation (imputation, encoding, scaling) lives inside a
   scikit-learn pipeline, so it is re-fitted per fold and cannot leak.

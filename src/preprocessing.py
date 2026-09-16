@@ -118,7 +118,15 @@ class LevelExpander(BaseEstimator, TransformerMixin):
     _SUFFIX = "__lvl"
 
     def fit(self, X: pd.DataFrame, y=None) -> "LevelExpander":
-        self.level_cols_ = [c for c in X.columns if X[c].nunique(dropna=True) <= self.max_levels]
+        # Routing is by type first, cardinality second. A text column can never
+        # go down the numeric branch however many levels it has (interaction
+        # columns, for instance, are text with hundreds of levels), and a
+        # genuinely continuous numeric column is never expanded into dummies.
+        self.level_cols_ = [
+            c
+            for c in X.columns
+            if _is_object_like(X[c]) or X[c].nunique(dropna=True) <= self.max_levels
+        ]
         self.wide_cols_ = [c for c in X.columns if c not in self.level_cols_]
         # Numeric columns that were expanded into dummies can additionally be
         # kept in their original numeric form, so the model retains a monotone
