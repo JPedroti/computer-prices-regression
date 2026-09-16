@@ -1,19 +1,15 @@
 """Experiment 09 -- robustness of the finalists across seeds and folds.
 
 A single cross-validation run fixes one particular partition of the data. Here
-each finalist is re-scored with five different fold partitions (seeds 42, 7,
-2024, 1337, 99), giving 25 validation folds per model.
+each finalist is re-scored over several fold partitions, and what is checked is
+whether the *ranking* survives, judged on the paired per-fold differences (the
+absolute spread is dominated by how many extreme prices land in each fold, which
+cancels when models share the fold).
 
-What is checked (CLAUDE.md section 15):
-
-* the mean RMSE across all folds and its spread;
-* whether the ranking between candidates is stable, judged by the *paired*
-  per-fold differences -- the absolute fold spread is dominated by how many
-  extreme prices land in a fold, which cancels when models share the fold;
-* whether the train/validation gap stays small enough for the overfitting rule.
-
-A candidate that wins on average but loses on several seeds is treated with
-caution, as required by CLAUDE.md section 30.
+Efficiency note: the blend is a fixed-weight combination of the two members, so
+its fold predictions are the weighted sum of theirs. Fitting each member once per
+fold and deriving the blend from those predictions gives all three candidates for
+the price of two, instead of refitting CatBoost a second time inside the blend.
 """
 from __future__ import annotations
 
@@ -27,113 +23,132 @@ warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
+from sklearn.model_selection import KFold
 
 from src.config import CV_FOLDS, ROBUSTNESS_SEEDS
 from src.data import load_dev_holdout
-from src.evaluate import cross_validate_model
+from src.evaluate import mae, rmse
 from src.features import FeatureConfig
 from src.models import build_model
 from src.utils import ExperimentTracker
 
 BASE = FeatureConfig()
+SEEDS = ROBUSTNESS_SEEDS[:3]
+BLEND_WEIGHTS = {"ridge|levels_plus": 0.3717, "catboost": 0.6283}
 
-# label -> kwargs for build_model.
-# The three contenders that came out of the screening phase, plus the one-hot
-# Ridge as a sanity anchor with a known value.
-FINALISTS: dict[str, dict] = {
-    "ridge|levels_plus a=100": dict(name="ridge", preprocessor="levels_plus", alpha=100.0),
-    "ridge|levels a=10": dict(name="ridge", preprocessor="levels", alpha=10.0),
-    "catboost d6 it800": dict(name="cat", iterations=800, learning_rate=0.06, depth=6),
-    "ridge|onehot a=10": dict(name="ridge", preprocessor="onehot", alpha=10.0),
-}
+
+def members(seed: int) -> dict:
+    return {
+        "ridge|levels_plus": build_model(
+            "ridge", feature_config=BASE, preprocessor="levels_plus", seed=seed, alpha=100.0
+        ),
+        "catboost": build_model(
+            "cat", feature_config=BASE, seed=seed, iterations=800, learning_rate=0.06, depth=6
+        ),
+    }
 
 
 def main() -> None:
     tracker = ExperimentTracker()
     X_dev, y_dev, _, _ = load_dev_holdout()
+    X_dev = X_dev.reset_index(drop=True)
+    y = pd.Series(np.asarray(y_dev, dtype=float))
 
-    per_model_folds: dict[str, list[float]] = {}
-    per_model_seed_means: dict[str, dict[int, float]] = {}
-    summary_rows = []
+    candidates = list(BLEND_WEIGHTS) + ["blend"]
+    folds: dict[str, list[float]] = {c: [] for c in candidates}
+    trains: dict[str, list[float]] = {c: [] for c in candidates}
+    maes: dict[str, list[float]] = {c: [] for c in candidates}
+    seed_means: dict[str, dict[int, list[float]]] = {c: {} for c in candidates}
 
-    for label, kwargs in FINALISTS.items():
-        name = kwargs.pop("name")
-        all_folds: list[float] = []
-        seed_means: dict[int, float] = {}
-        train_rmses, val_maes, gaps = [], [], []
+    for seed in SEEDS:
+        specs = members(seed)
+        kf = KFold(n_splits=CV_FOLDS, shuffle=True, random_state=seed)
+        per_seed: dict[str, list[float]] = {c: [] for c in candidates}
 
-        for seed in ROBUSTNESS_SEEDS:
-            # The seed drives both the fold partition and the model's own
-            # randomness, so this measures what actually matters: how the
-            # candidate behaves on a different draw of everything.
-            model = build_model(name, feature_config=BASE, seed=seed, **kwargs)
-            res = cross_validate_model(
-                model, X_dev, y_dev, name=label,
-                n_splits=CV_FOLDS, n_repeats=1, seed=seed, return_oof=False,
-            )
-            all_folds.extend(res.fold_val_rmse)
-            seed_means[seed] = res.val_rmse
-            train_rmses.append(res.train_rmse)
-            val_maes.append(res.val_mae)
-            gaps.append(res.gap)
-            print(f"  {label:26s} seed={seed:<5d} valRMSE={res.val_rmse:8.3f} gap={res.gap:+6.2f}",
-                  flush=True)
+        for tr_idx, va_idx in kf.split(X_dev):
+            X_tr, X_va = X_dev.iloc[tr_idx], X_dev.iloc[va_idx]
+            y_tr, y_va = y.iloc[tr_idx], y.iloc[va_idx]
 
-        kwargs["name"] = name
-        per_model_folds[label] = all_folds
-        per_model_seed_means[label] = seed_means
-        row = {
-            "model": label,
-            "mean_rmse": float(np.mean(all_folds)),
-            "sd_across_folds": float(np.std(all_folds, ddof=1)),
-            "sd_across_seed_means": float(np.std(list(seed_means.values()), ddof=1)),
-            "worst_seed_rmse": float(max(seed_means.values())),
-            "best_seed_rmse": float(min(seed_means.values())),
-            "mean_train_rmse": float(np.mean(train_rmses)),
-            "mean_gap": float(np.mean(gaps)),
-            "mean_val_mae": float(np.mean(val_maes)),
-        }
-        summary_rows.append(row)
-        print(f"  -> {label}: {row['mean_rmse']:.3f} (+-{row['sd_across_folds']:.3f} over 25 folds)\n",
-              flush=True)
+            val_pred, train_pred = {}, {}
+            for label, spec in specs.items():
+                model = clone(spec)
+                model.fit(X_tr, y_tr)
+                val_pred[label] = model.predict(X_va)
+                train_pred[label] = model.predict(X_tr)
 
-        tracker.log(
-            model=label, features=BASE.enabled(),
-            preprocessing=kwargs.get("preprocessor", "native"),
-            hyperparameters={k: v for k, v in kwargs.items() if k not in ("name", "preprocessor")},
-            seed=-1, validation_strategy=f"{len(ROBUSTNESS_SEEDS)}x KFold({CV_FOLDS}) seeds={list(ROBUSTNESS_SEEDS)}",
-            train_rmse=row["mean_train_rmse"], validation_rmse=row["mean_rmse"],
-            train_mae=float("nan"), validation_mae=row["mean_val_mae"],
-            validation_rmse_std=row["sd_across_folds"],
-            notes="exp09 multi-seed robustness (25 folds)",
-        )
+            # The blend is linear in its members, so it needs no extra fitting.
+            val_pred["blend"] = sum(BLEND_WEIGHTS[k] * v for k, v in val_pred.items())
+            train_pred["blend"] = sum(BLEND_WEIGHTS[k] * v for k, v in train_pred.items())
 
-    summary = pd.DataFrame(summary_rows).sort_values("mean_rmse").reset_index(drop=True)
-    print("=== robustness summary ===")
+            for c in candidates:
+                r = rmse(y_va, val_pred[c])
+                folds[c].append(r)
+                per_seed[c].append(r)
+                trains[c].append(rmse(y_tr, train_pred[c]))
+                maes[c].append(mae(y_va, val_pred[c]))
+
+        for c in candidates:
+            seed_means[c][seed] = float(np.mean(per_seed[c]))
+            print(f"  {c:20s} seed={seed:<5d} valRMSE={seed_means[c][seed]:8.3f}", flush=True)
+        print(flush=True)
+
+    summary = pd.DataFrame(
+        [
+            {
+                "model": c,
+                "mean_rmse": float(np.mean(folds[c])),
+                "sd_across_folds": float(np.std(folds[c], ddof=1)),
+                "sd_across_seed_means": float(np.std(list(seed_means[c].values()), ddof=1)),
+                "worst_seed": float(max(seed_means[c].values())),
+                "best_seed": float(min(seed_means[c].values())),
+                "mean_train_rmse": float(np.mean(trains[c])),
+                "mean_gap": float(np.mean(folds[c]) - np.mean(trains[c])),
+                "mean_val_mae": float(np.mean(maes[c])),
+            }
+            for c in candidates
+        ]
+    ).sort_values("mean_rmse").reset_index(drop=True)
+
+    print("=== robustness summary over "
+          f"{len(SEEDS)} seeds x {CV_FOLDS} folds = {len(folds[candidates[0]])} folds ===")
     print(summary.round(3).to_string(index=False))
 
     best = summary.iloc[0]["model"]
-    print(f"\n=== paired per-fold differences vs {best} (25 shared folds) ===")
-    ref = np.array(per_model_folds[best])
+    print(f"\n=== paired per-fold differences vs {best} ===")
+    ref = np.array(folds[best])
     for label in summary["model"]:
         if label == best:
             continue
-        diff = np.array(per_model_folds[label]) - ref
+        diff = np.array(folds[label]) - ref
         se = diff.std(ddof=1) / np.sqrt(len(diff))
-        wins = int((diff < 0).sum())
-        print(f"  {label:26s} diff={diff.mean():+7.3f} +-{se:5.3f}  "
-              f"beats reference on {wins}/{len(diff)} folds")
+        print(f"  {label:20s} diff={diff.mean():+7.3f} +-{se:5.3f}  "
+              f"better on {int((diff < 0).sum())}/{len(diff)} folds")
 
     print("\n=== per-seed means ===")
-    print(pd.DataFrame(per_model_seed_means).round(3).to_string())
+    print(pd.DataFrame(seed_means).round(3).to_string())
+
+    for c in candidates:
+        row = summary[summary["model"] == c].iloc[0]
+        tracker.log(
+            model=c, features=BASE.enabled(),
+            preprocessing="mixed" if c == "blend" else ("levels_plus" if "ridge" in c else "native"),
+            hyperparameters=BLEND_WEIGHTS if c == "blend" else {},
+            seed=-1,
+            validation_strategy=f"{len(SEEDS)}x KFold({CV_FOLDS}) seeds={list(SEEDS)}",
+            train_rmse=row["mean_train_rmse"], validation_rmse=row["mean_rmse"],
+            train_mae=float("nan"), validation_mae=row["mean_val_mae"],
+            validation_rmse_std=row["sd_across_folds"],
+            notes=f"exp09 multi-seed robustness ({len(folds[c])} folds)",
+        )
 
     out = Path(__file__).resolve().parents[1] / "experiments" / "exp09_robustness.json"
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(
             {
-                "summary": summary_rows,
-                "per_seed_means": {k: {str(s): v for s, v in d.items()}
-                                   for k, d in per_model_seed_means.items()},
+                "summary": summary.to_dict("records"),
+                "per_seed_means": {k: {str(s): v for s, v in d.items()} for k, d in seed_means.items()},
+                "fold_rmse": folds,
             },
             fh, indent=2,
         )

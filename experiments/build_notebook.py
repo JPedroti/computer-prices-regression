@@ -373,7 +373,36 @@ axes[1].set_xlabel("predicted"); axes[1].set_ylabel("residual"); axes[1].set_tit
 plt.tight_layout(); plt.show()
 """),
     md("""
-## 11. The final model, and the official overfitting rule
+## 11. Choosing the final model
+
+Three candidates survived the screening. The choice between them weighs
+predictive accuracy, overfitting margin, stability, complexity and
+explainability together, as the challenge's own criteria require — not RMSE
+alone.
+
+| | Ridge `levels_plus` | CatBoost | **blend of the two** |
+|---|---|---|---|
+| pooled out-of-fold RMSE | 212.34 | 211.69 | **211.33** |
+| overfitting margin, mean over inner splits | +27.7 | +20.1 | +22.9 |
+| overfitting margin, worst split | +25.2 | +17.5 | +20.4 |
+| deterministic across refits | yes | yes | yes |
+| artefact size | 24 KB | ~2 MB | ~2 MB |
+| SHAP | exact (linear) | exact (tree) | exact (weighted sum) |
+
+For contrast, an ordinary LightGBM reaches 215.5 and **fails the overfitting
+rule on every inner split** (margin −13), and HistGradientBoosting passes with a
+worst-case margin of only 7.5. The models that fit this data well are also the
+ones that satisfy the constraint; that is not a coincidence, it is what happens
+when the model form matches the process.
+
+The blend takes 0.372 of the Ridge and 0.628 of CatBoost. Those weights were
+fitted by non-negative least squares on out-of-fold predictions, and the gain
+survives fitting them on rows they are not scored on.
+
+Adding HistGradientBoosting, LightGBM and the one-hot Ridge to the blend buys
+0.025 RMSE, so they are left out.
+
+## 12. The official overfitting rule
 
 The rule, implemented exactly as specified in `src.evaluate.overfitting_report`:
 train the final model on the training split only; compute RMSE on train and on
@@ -414,7 +443,7 @@ ax.set_xlabel("RMSE"); ax.set_title("95% bootstrap confidence intervals — offi
 plt.tight_layout(); plt.show()
 """),
     md("""
-## 12. SHAP — global
+## 13. SHAP — global
 
 SHAP attributes the model's output to its inputs. It describes **what the model
 does**, not what causes prices in the world; nothing here is a causal claim.
@@ -456,7 +485,7 @@ Read all of this as a description of the fitted model's behaviour — which inpu
 it leans on — not as evidence about what causes prices in the market.
 """),
     md("""
-## 13. SHAP — local
+## 14. SHAP — local
 
 One individual prediction, decomposed into the features that pushed it up and
 those that pushed it down.
@@ -491,7 +520,7 @@ Again, this is the model's internal accounting, not a causal statement about the
 computer market.
 """),
     md("""
-## 14. Inference on new data
+## 15. Inference on new data
 
 The delivered artefact is a single pipeline: raw columns in, predictions out.
 No manual preprocessing, no retraining.
@@ -513,32 +542,50 @@ print(f"order preserved: {len(preds) == len(new_data) and list(preds.index) == l
 preds.head()
 """),
     md("""
-## 15. Conclusion
+## 16. Conclusion
 
 **What the data turned out to be.** The price is close to a sum of
-per-component contributions. That single fact decided the modelling: a
-saturated additive linear model — one coefficient per observed level of each
-feature — outperformed random forests, extra trees, XGBoost, LightGBM,
-HistGradientBoosting and CatBoost, all of which spend capacity modelling
-interactions that the data does not contain.
+per-component contributions. Three independent tests agree: boosting the
+additive model's residual makes it worse with flat, diffuse importances;
+explicit interaction terms produce changes of at most 0.13 RMSE and hurt when
+combined; and forcing a booster to be additive improves it by 5.3 points. A
+log-space fit is clearly worse, so the noise is additive on the price scale.
 
-**Why that also wins on the other criteria.** Because the model is not fighting
-the data, its training and validation errors nearly coincide, so the official
-bootstrap intervals overlap comfortably rather than marginally. The same choice
-therefore maximises the RMSE score and secures the overfitting points, instead
-of trading one against the other.
+**What that implied for modelling.** A saturated additive linear model — one
+coefficient per observed level of each feature — outperformed random forests,
+extra trees, XGBoost, LightGBM and HistGradientBoosting, all of which spend
+capacity on interactions the data does not contain. CatBoost was the exception,
+and blending the two is better than either alone, by a margin that survives
+fitting the weights out of sample.
 
-**What was ruled out, with evidence.** Multiplicative structure (log-space fit
-was worse), interactions (residual boosting made it worse; explicit interaction
-terms did not produce a paired improvement), and the apparent bias in the
-expensive tail (a selection artefact of conditioning on the true target, not a
-model defect).
+**Why the same choice wins on the other criteria.** Because the model form
+matches the process, training and validation errors nearly coincide, so the
+bootstrap intervals overlap with room to spare rather than marginally. The
+contrast is stark: an ordinary LightGBM, only 4 RMSE points behind, **fails the
+overfitting criterion on every split tested**. Here there was no trade-off to
+make between accuracy and the constraint — but there would have been, had the
+data been different, and that is why the margin was measured rather than
+assumed.
+
+**What was ruled out, with evidence.** Multiplicative structure; interactions;
+a tail correction — the apparent bias among expensive machines is a selection
+artefact of conditioning on the true target, and the calibration measured on
+deciles of the *prediction* is flat. All of the engineered feature families
+turned out to be redundant under the saturated representation, which is worth
+saying plainly: the gain came from the representation, not from the feature
+engineering.
 
 **Honest limitations.** The remaining error is, as far as these experiments can
-tell, irreducible noise: a flexible booster drives training error far below the
-additive model's while making validation error worse. The secret test set is
-assumed to share the development distribution — a working hypothesis, not a
-guarantee, and no modelling choice depends on how the data was split.
+tell, irreducible noise. Its spread is proportional to price at about 11% with
+an extremely heavy right tail, the worst 0.1% of rows carry 38% of all squared
+error while belonging to no identifiable segment, and the model's RMSE already
+equals the RMSE that this noise alone implies. A flexible booster drives
+training error far below the additive model's while making validation error
+worse — the signature of fitting noise.
+
+The secret test set is assumed to share the development distribution. That is a
+working hypothesis, not a guarantee, and no modelling choice here depends on how
+the data was split.
 """),
 ]
 
