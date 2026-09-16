@@ -41,6 +41,22 @@ Produce the SHAP analysis:
 python -m src.explain
 ```
 
+### Reproducing the investigation
+
+Each experiment is a standalone script and appends to `experiments/results.csv`.
+They can be run in any order, except that `exp13` needs the out-of-fold cache
+that `exp07` writes. The full set takes a few hours, dominated by CatBoost:
+
+```bash
+python experiments/exp01_baselines.py
+```
+
+Regenerate the narrative notebook from its source:
+
+```bash
+python experiments/build_notebook.py
+```
+
 ---
 
 ## Project structure

@@ -512,12 +512,21 @@ ax.set_title(f"Why the model predicted {shap_result.prediction(ROW):,.0f} for ob
 plt.tight_layout(); plt.show()
 """),
     md("""
-Reading the example above: the model starts from the average prediction and then
-adds or subtracts for each specification. A high GPU tier and large storage push
-the estimate up; a mechanical hard drive and a plain IPS panel pull it down.
+**How to read this.** The model starts from the base value — its average
+prediction over the sample — and then adds or subtracts an amount for each
+specification of this particular machine. Positive bars are the features that
+pushed this prediction above the average; negative bars are the ones that pulled
+it below. The bars sum exactly to the difference between the base value and the
+final prediction, which is the property the tests in `tests/test_explain.py`
+check to within 1e-6.
 
-Again, this is the model's internal accounting, not a causal statement about the
-computer market.
+For the machine shown above, the strongest movers are the GPU and CPU tiers, the
+storage configuration and the display type — the components a buyer would
+recognise as driving the price. Whether each one pushes up or down depends on
+whether this machine's value for it is above or below what is typical.
+
+Again, this is the model's internal accounting for one row. It says what the
+model did, not what causes prices in the computer market.
 """),
     md("""
 ## 15. Inference on new data
