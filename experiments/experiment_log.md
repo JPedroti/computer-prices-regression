@@ -452,10 +452,64 @@ measured, out-of-sample gain — which is the standard section 16 asks for.
 
 ---
 
-## exp09 — Robustness across seeds
-
-*(in progress)*
-
 ## exp10 — CatBoost tuning
 
-*(in progress)*
+CatBoost was the only booster to beat the additive Ridge, so it was worth tuning
+— but along the directions the additive finding predicts should matter, not as a
+blind grid. Each configuration costs about six minutes, so the grid is eight
+entries (CLAUDE.md section 31).
+
+| Configuration | valRMSE | gap | paired diff vs reference |
+|---|---|---|---|
+| **depth 6, 1500 iters, lr 0.03** | **211.190** | +6.76 | **−0.193 ±0.031** |
+| depth 4, 1000 iters, lr 0.06 | 211.327 | +3.96 | −0.055 ±0.110 |
+| depth 6, 600 iters, lr 0.06 *(reference)* | 211.382 | +5.72 | — |
+| depth 5, 800 iters | 211.461 | +5.06 | +0.078 ±0.074 |
+| depth 4, 2000 iters, lr 0.03, l2 = 10 | 211.462 | +2.57 | +0.080 ±0.110 |
+| depth 6, l2 = 10 | 211.604 | +3.88 | +0.221 ±0.093 |
+| depth 6, one_hot_max_size = 64 | 211.615 | **+16.72** | +0.233 ±0.145 |
+| depth 6, l2 = 30 | 211.862 | +2.80 | +0.479 ±0.163 |
+
+Two things are worth reading off this table.
+
+**Depth barely matters, which is the additive result again.** Going from depth 6
+to depth 4 costs nothing measurable (−0.055 ±0.110) while nearly halving the
+train gap. A model that could use five-way interactions gains nothing from being
+allowed to.
+
+**The ordered target statistics are doing the work.** Forcing plain one-hot
+encoding of the categoricals (`one_hot_max_size = 64`) leaves the RMSE almost
+unchanged but triples the train gap, from +5.7 to +16.7, and makes the fit 15×
+faster. CatBoost's advantage over LightGBM here is its categorical handling and
+its symmetric trees, not extra capacity.
+
+Explicit regularisation (`l2_leaf_reg`) shrinks the gap but costs RMSE, so it is
+not used: the gap is already comfortable.
+
+---
+
+## exp09 — Robustness across seeds
+
+Each finalist was re-scored over three fold partitions (15 folds in total). The
+blend is a fixed-weight combination of its members, so its fold predictions are
+the weighted sum of theirs — fitting each member once per fold gives all three
+candidates for the cost of two.
+
+| Model | mean RMSE | sd across folds | sd across seed means | worst seed | mean gap |
+|---|---|---|---|---|---|
+| **blend** | **210.981** | 11.74 | 0.072 | 211.040 | +5.18 |
+| CatBoost | 211.335 | 11.69 | 0.076 | 211.403 | +7.52 |
+| Ridge `levels_plus` | 211.988 | 11.71 | 0.109 | 212.113 | +0.96 |
+
+**Paired per-fold differences against the blend:**
+
+| Model | difference | folds where it wins |
+|---|---|---|
+| CatBoost | +0.354 ±0.034 | **0 of 15** |
+| Ridge `levels_plus` | +1.007 ±0.048 | **0 of 15** |
+
+The ordering is not a fluke of one partition: the blend is better on **every one
+of the fifteen folds**, against both alternatives. The seed-to-seed spread of
+each candidate's mean is under 0.11 RMSE, so the ranking is stable in exactly the
+sense CLAUDE.md section 15 asks about — the absolute spread across folds is large
+(±11.7), but that is the tail lottery, and it cancels in the paired comparison.

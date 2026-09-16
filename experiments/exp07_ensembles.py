@@ -51,6 +51,8 @@ CANDIDATES: dict[str, tuple[str, str | None, dict, FeatureConfig]] = {
     "hgb": ("hgb", None, {"max_iter": 400, "learning_rate": 0.06}, BASE),
     "lgbm": ("lgbm", None, {"n_estimators": 600, "learning_rate": 0.05, "num_leaves": 31}, BASE),
     "cat": ("cat", None, {"iterations": 800, "learning_rate": 0.06, "depth": 6}, BASE),
+    # Best configuration from the exp10 tuning sweep (-0.193 +-0.031 paired).
+    "cat_tuned": ("cat", None, {"iterations": 1500, "learning_rate": 0.03, "depth": 6}, BASE),
 }
 
 

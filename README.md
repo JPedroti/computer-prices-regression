@@ -106,22 +106,46 @@ The holdout is never used to select a model, a feature or a hyperparameter.
 The secret test set is never accessed, inspected or reasoned about beyond the
 assumption that it shares the development distribution.
 
-### Why the model looks the way it does
+### What the data turned out to be
 
-The investigation is recorded in `experiments/experiment_log.md`. The short
-version:
+The full investigation is in `experiments/experiment_log.md`; the short version:
 
-1. The dataset is close to a **sum of per-component contributions**. A
-   saturated additive model beat a 1,500-tree LightGBM by 7 RMSE points on the
-   same split.
-2. A log-space (multiplicative) fit was clearly worse, so the noise is additive
-   on the price scale.
-3. **No exploitable interactions were found.** Boosting the additive model's
-   residual made it worse, and explicit interaction terms did not produce a
-   paired improvement across folds.
-4. Consequently the final model is an additive one. That choice also removes
-   almost all of the train/validation gap, which is what the overfitting
-   criterion rewards.
+1. **The price is close to a sum of per-component contributions.** Three
+   independent tests agree. Boosting the additive model's residual makes it
+   *worse*, with flat, diffuse importances. Explicit interaction terms move the
+   RMSE by at most 0.13 points and hurt when combined. And forcing a booster to
+   be additive improves it by 5.3 points.
+2. **The noise is additive on the price scale**, so a log-space fit loses 6–9
+   points: exponentiating it targets the conditional median, and the right tail
+   is heavy enough that the mean sits well above it.
+3. **The remaining error is irreducible.** Its spread is proportional to price
+   at roughly 11% with a very heavy right tail; the worst 0.1% of rows carry 38%
+   of all squared error and belong to no identifiable segment; and the model's
+   RMSE already equals what that noise alone implies.
+4. **The feature engineering was not what produced the gain** — the saturated
+   representation was. Under it, every engineered family is redundant, and the
+   ablation says so (no family moves the RMSE by more than 0.14).
+
+### The final model
+
+A fixed-weight blend, 0.372 of a saturated additive Ridge and 0.628 of CatBoost.
+
+| Candidate | pooled OOF RMSE | overfitting margin (mean / worst) |
+|---|---|---|
+| Ridge `levels_plus` | 212.34 | +27.7 / +25.2 |
+| CatBoost | 211.69 | +20.1 / +17.5 |
+| **blend of the two** | **211.33** | **+22.9 / +20.4** |
+| HistGradientBoosting | 215.06 | +9.4 / +7.5 |
+| LightGBM | 215.49 | −13.0 — **fails on every split** |
+
+The blend wins on the metric that carries 55 points, and the gain survives
+fitting its weights on rows they are not scored on. Adding
+HistGradientBoosting, LightGBM or the one-hot Ridge to it buys 0.025 RMSE, so
+they are left out — and LightGBM would bring real risk for nothing.
+
+That last row is the point worth keeping: a perfectly ordinary, well-performing
+LightGBM is only 4 RMSE points behind and would score **zero** of the 15
+overfitting points.
 
 ### Overfitting rule
 
@@ -130,6 +154,11 @@ the model is trained on the training split only; RMSE is computed on train and
 on validation; each is given a 95% percentile-bootstrap confidence interval
 built by resampling **observations** (2,000 replicates, seed 12345); the
 intervals are then compared. Overlapping intervals mean no overfitting.
+
+Candidate models were compared using this rule on *inner* splits of the
+development data (`exp11`, `exp13`), never on the sealed holdout — using the
+holdout to choose between candidates would have made it a selection set and
+voided the final number. The holdout is read exactly once, by `src/train.py`.
 
 Reported values are in `models/final_model_metadata.json`.
 
