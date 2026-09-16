@@ -219,17 +219,10 @@ def global_report(result: ShapResult, top: int = 20, out_dir: Path = FIGURES_DIR
     fig.savefig(out_dir / "shap_global_by_feature.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
+    effect_by_level(result, ranking, out_dir=out_dir)
+
     if result.per_column is not None:
-        import shap
-
         arr, transformed = result.per_column
-        plt.figure()
-        shap.summary_plot(arr, transformed, max_display=top, show=False, plot_size=(10, 8))
-        plt.title("SHAP beeswarm over transformed columns")
-        plt.tight_layout()
-        plt.savefig(out_dir / "shap_global_beeswarm.png", dpi=150, bbox_inches="tight")
-        plt.close()
-
         pd.DataFrame(
             {
                 "column": [str(c) for c in transformed.columns],
@@ -242,6 +235,51 @@ def global_report(result: ShapResult, top: int = 20, out_dir: Path = FIGURES_DIR
 
     ranking.to_csv(REPORTS_DIR / "shap_global_ranking.csv", index=False)
     return ranking
+
+
+def effect_by_level(result: ShapResult, ranking: pd.DataFrame, top: int = 6,
+                    out_dir: Path = FIGURES_DIR, max_levels: int = 16):
+    """Show the *direction* of each top feature's effect, level by level.
+
+    A beeswarm over the transformed columns is unreadable here -- one feature is
+    spread over dozens of dummies, and for an ensemble the columns of the two
+    members do not even match. Plotting the mean SHAP contribution against the
+    feature's own value answers the same question more directly: does a larger
+    value push the price up or down, and by how much.
+    """
+    features = [
+        f for f in ranking["feature"].head(top * 3)
+        if f in result.display_rows.columns
+        and result.display_rows[f].nunique(dropna=True) <= max_levels
+    ][:top]
+    if not features:
+        return None
+
+    cols = min(3, len(features))
+    rows = (len(features) + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(4.6 * cols, 3.4 * rows), squeeze=False)
+
+    for ax, feature in zip(axes.ravel(), features):
+        frame = pd.DataFrame(
+            {"level": result.display_rows[feature].astype(str).to_numpy(),
+             "shap": result.by_feature[feature].to_numpy()}
+        )
+        grouped = frame.groupby("level")["shap"].agg(["mean", "size"]).sort_values("mean")
+        colors = ["indianred" if v < 0 else "steelblue" for v in grouped["mean"]]
+        ax.barh(grouped.index, grouped["mean"], color=colors)
+        ax.axvline(0, color="black", lw=1)
+        ax.set_title(feature, fontsize=11)
+        ax.set_xlabel("mean SHAP")
+        ax.tick_params(labelsize=8)
+
+    for ax in axes.ravel()[len(features):]:
+        ax.axis("off")
+
+    fig.suptitle("Direction of each top feature's effect on the predicted price", y=1.0)
+    plt.tight_layout()
+    fig.savefig(out_dir / "shap_effect_by_level.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return features
 
 
 # --------------------------------------------------------------------------- #

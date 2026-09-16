@@ -469,6 +469,24 @@ ax.set_xlabel("mean |SHAP| (in price units)")
 ax.set_title("Which features move this model's predictions most")
 plt.tight_layout(); plt.show()
 """),
+    code("""
+from src.explain import effect_by_level
+from IPython.display import Image
+
+# Importance says which features move predictions; this says in which direction.
+effect_by_level(shap_result, ranking)
+Image(filename=str(ROOT / "reports" / "figures" / "shap_effect_by_level.png"))
+"""),
+    md("""
+Every one of these reads the way a buyer would expect, which is a useful sanity
+check on the fitted model: GPU tier and CPU tier are monotone from strongly
+negative at tier 1 to strongly positive at tier 6; RAM runs from about −125 at
+8 GB to +250 at 128 GB; panel technology orders LED < VA < IPS < QLED < Mini-LED
+< OLED; and storage is monotone in capacity.
+
+Note that the plot shows the model's *average* contribution per level, which is
+why it is smooth even though nothing forced it to be.
+"""),
     md("""
 The ranking is led by the component specifications — GPU tier, display type,
 CPU tier and clock — which is what one would expect to drive a machine's price.
