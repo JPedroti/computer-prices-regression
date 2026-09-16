@@ -1,10 +1,7 @@
 {
-  "name": "additive-ridge-levels-plus",
-  "description": "Saturated additive Ridge: every low-cardinality column is expanded into one dummy per level, numeric columns are additionally kept in their original form. Chosen because the generating process was shown to be additive (exp02, exp06) and this specification beat every gradient booster while keeping the train/validation gap under one RMSE point (exp04, exp09).",
-  "kind": "single",
-  "model": "ridge",
-  "preprocessor": "levels_plus",
-  "target_transform": null,
+  "name": "ridge-levels-plus + catboost blend",
+  "description": "Fixed-weight blend of a saturated additive Ridge and CatBoost. The generating process was shown to be additive (exp02, exp06, exp06b, exp08), which is why the additive Ridge beats every gradient booster except CatBoost and carries almost no train/validation gap. CatBoost adds a little on top; blending the two recovers 0.35 RMSE over CatBoost alone and 1.01 over the Ridge alone (exp07, exp13), a gain confirmed with weights fitted on rows they were not scored on. Adding HistGradientBoosting, LightGBM or the one-hot Ridge to the blend buys 0.025 RMSE, so they are left out - and LightGBM fails the overfitting rule on its own (exp11).",
+  "kind": "ensemble",
   "seed": 42,
   "feature_config": {
     "model_decomp": true,
@@ -15,7 +12,24 @@
     "capacity": false,
     "premium": false
   },
-  "hyperparameters": {
-    "alpha": 100.0
-  }
+  "weights": [0.3717, 0.6283],
+  "members": [
+    {
+      "name": "ridge_levels_plus",
+      "model": "ridge",
+      "preprocessor": "levels_plus",
+      "hyperparameters": {
+        "alpha": 100.0
+      }
+    },
+    {
+      "name": "catboost",
+      "model": "cat",
+      "hyperparameters": {
+        "iterations": 800,
+        "learning_rate": 0.06,
+        "depth": 6
+      }
+    }
+  ]
 }

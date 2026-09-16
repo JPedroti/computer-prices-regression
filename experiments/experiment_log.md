@@ -256,6 +256,17 @@ adding all ten together makes the model *worse* (+0.355) while tripling the trai
 gap. Statistical detectability and practical value are not the same thing here,
 and nothing is adopted on the strength of a 0.06% move.
 
+**exp06b — combining only the four that helped.** Adding all ten is not a fair
+test of combination, since it includes pairs that hurt on their own. Combining
+only the four with a negative effect gives **−0.237 ±0.032**, against a sum of
+individual effects of −0.396: they overlap, so they do not add up.
+
+Not adopted, for three reasons. The gain is 0.11% of RMSE. Those four pairs were
+*selected* by their measured effect on these very folds, so −0.237 is an
+optimistic estimate of a real effect. And the train gap rises from +0.90 to
++1.34, spending overfitting margin — the constraint actually worth protecting —
+to buy a fifth of an RMSE point.
+
 **Conclusion.** Three independent lines of evidence — residual boosting (exp02),
 explicit interaction terms (exp06) and interaction-constrained boosting (exp08) —
 all say the same thing: the process is additive and there is no interaction
@@ -415,7 +426,29 @@ criteria of section 33, not on RMSE alone.
 
 The blend's weights are 0.372 on the Ridge and 0.628 on CatBoost.
 
-*(overfitting margins for the blend: in progress)*
+Overfitting margins on the same three inner splits used in exp11:
+
+| Candidate | margin per split | mean | worst | passes |
+|---|---|---|---|---|
+| Ridge `levels_plus` | +25.20, +27.24, +30.76 | +27.74 | +25.20 | 3/3 |
+| **Ridge + CatBoost blend** | +20.41, +23.43, +24.92 | **+22.92** | **+20.41** | 3/3 |
+| CatBoost | +17.53, +21.17, +21.62 | +20.11 | +17.53 | 3/3 |
+
+**Decision: the two-member blend is the final model.**
+
+It is the best of the three on the metric that carries 55 points, by 1.01 RMSE
+over the Ridge and 0.35 over CatBoost, and that gain was confirmed with the
+weights fitted on rows they were not scored on, in both directions of the split.
+It passes the overfitting rule on every inner split with a margin around 23 —
+less buffer than the Ridge alone, but far more than the 7.5 that
+HistGradientBoosting would bring and unlike LightGBM, which fails outright. Both
+members are deterministic across refits, the artefact is a couple of megabytes,
+and SHAP is exact for it: the ensemble is linear in its members, so its SHAP
+values are the weighted sum of theirs, which a test verifies reproduces the
+prediction to within 1e-6.
+
+The complexity added is two models with fixed weights, and it is paid for by a
+measured, out-of-sample gain — which is the standard section 16 asks for.
 
 ---
 
