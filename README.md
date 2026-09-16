@@ -41,6 +41,16 @@ Produce the SHAP analysis:
 python -m src.explain
 ```
 
+It writes `reports/shap_global_ranking.csv` and three figures to
+`reports/figures/`: the global importance per feature, the **direction** of each
+top feature's effect level by level, and a local explanation for one observation.
+
+Check the whole delivery against the completion criteria:
+
+```bash
+python experiments/final_check.py
+```
+
 ### Reproducing the investigation
 
 Each experiment is a standalone script and appends to `experiments/results.csv`.
@@ -87,13 +97,16 @@ computer-prices-regression/
 │   ├── exp04_additive_spec.py        choosing the additive specification
 │   ├── exp05_feature_ablation.py     one run per feature family
 │   ├── exp06_interactions.py         interactions, tested directly
+│   ├── exp06b_best_interactions.py   combining only the ones that helped
 │   ├── exp07_ensembles.py            blending and stacking over OOF predictions
 │   ├── exp08_additive_boosting.py    boosting constrained to be additive
-│   ├── exp09_robustness.py           finalists across five fold partitions
+│   ├── exp09_robustness.py           finalists across three fold partitions
 │   ├── exp10_catboost_tuning.py      targeted tuning of the strongest booster
 │   ├── exp11_overfitting_margin.py   rehearsing the official rule on inner splits
 │   ├── exp12_learning_curve.py       what the train-only protocol costs
+│   ├── exp13_blend_candidate.py      the final selection
 │   ├── build_notebook.py             generates the narrative notebook
+│   ├── final_check.py                acceptance check against the criteria
 │   ├── results.csv                   every run, with the full schema
 │   └── experiment_log.md             hypotheses, findings and decisions
 ├── models/
