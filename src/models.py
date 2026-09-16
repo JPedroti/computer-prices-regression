@@ -57,17 +57,11 @@ class CatBoostNative(BaseEstimator, RegressorMixin):
 
     _MISSING = "__missing__"
 
-    def __init__(self, **params: Any):
+    # A single dict-valued constructor argument keeps the estimator clonable.
+    # sklearn's clone round-trips get_params() through __init__ and then checks
+    # the stored value by identity, so the dict must be kept exactly as given.
+    def __init__(self, params: dict[str, Any] | None = None):
         self.params = params
-
-    def get_params(self, deep: bool = True) -> dict[str, Any]:
-        return {"params": self.params}
-
-    def set_params(self, **kwargs: Any) -> "CatBoostNative":
-        if "params" in kwargs:
-            self.params = kwargs.pop("params")
-        self.params.update(kwargs)
-        return self
 
     def _prepare(self, X: pd.DataFrame) -> pd.DataFrame:
         out = X.copy()
@@ -82,7 +76,7 @@ class CatBoostNative(BaseEstimator, RegressorMixin):
             c for c in X.columns if str(X[c].dtype) in ("category", "object", "str", "string")
         ]
         defaults = {"verbose": 0, "random_seed": RANDOM_SEED, "allow_writing_files": False}
-        self.model_ = CatBoostRegressor(**{**defaults, **self.params})
+        self.model_ = CatBoostRegressor(**{**defaults, **(self.params or {})})
         self.model_.fit(self._prepare(X), np.asarray(y, dtype=float), cat_features=self.cat_features_)
         return self
 
@@ -137,7 +131,7 @@ def _make_estimator(name: str, seed: int, params: dict[str, Any]):
             }
         )
     if name == "cat":
-        return CatBoostNative(**{"random_seed": seed, **p})
+        return CatBoostNative(params={"random_seed": seed, **p})
 
     raise ValueError(f"unknown model name {name!r}")
 
