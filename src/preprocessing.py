@@ -52,7 +52,12 @@ class ToCategory(BaseEstimator, TransformerMixin):
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         out = X.copy()[self.columns_]
         for col, cats in self.categories_.items():
-            out[col] = pd.Categorical(out[col].astype(str).where(out[col].notna()), categories=cats)
+            values = out[col].astype(str).where(out[col].notna())
+            # Map categories unseen during fit to NaN before constructing the
+            # Categorical: the boosting libraries read that as missing, and
+            # passing out-of-vocabulary values straight in is deprecated.
+            values = values.where(values.isin(cats))
+            out[col] = pd.Categorical(values, categories=cats)
         return out
 
     def get_feature_names_out(self, input_features=None) -> np.ndarray:

@@ -52,19 +52,34 @@ def decile_table(values: np.ndarray, resid: np.ndarray, label: str) -> pd.DataFr
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default="lgbm")
+    parser.add_argument("--preprocessor", default=None)
+    parser.add_argument("--alpha", type=float, default=None)
+    args = parser.parse_args()
+
     X_dev, y_dev, _, _ = load_dev_holdout()
     X_tr, X_va, y_tr, y_va = train_test_split(
         X_dev, y_dev, test_size=0.25, random_state=RANDOM_SEED
     )
 
     cfg = FeatureConfig()
-    model = build_model("lgbm", feature_config=cfg, n_estimators=600, learning_rate=0.05,
-                        num_leaves=31, seed=RANDOM_SEED)
+    # The noise-floor estimate is only as good as the model producing the
+    # residuals, so it must be re-derived with the best available model.
+    if args.model == "lgbm" and args.preprocessor is None:
+        params = {"n_estimators": 600, "learning_rate": 0.05, "num_leaves": 31}
+    else:
+        params = {"alpha": args.alpha} if args.alpha is not None else {}
+    model = build_model(args.model, feature_config=cfg, preprocessor=args.preprocessor,
+                        seed=RANDOM_SEED, **params)
     model.fit(X_tr, y_tr)
     pred = model.predict(X_va)
     y_true = y_va.to_numpy(dtype=float)
     resid = y_true - pred
-    print(f"reference model: LGBM  valRMSE={rmse(y_true, pred):.3f}\n")
+    spec = f"{args.model}|{args.preprocessor or 'default'} {params}"
+    print(f"reference model: {spec}  valRMSE={rmse(y_true, pred):.3f}\n")
 
     print("=== error concentration ===")
     print(error_concentration(y_true, pred).to_string(index=False))

@@ -55,10 +55,19 @@ def test_model_and_cpu_decomposition(xy):
     out = FeatureEngineer(FeatureConfig()).fit_transform(X)
     assert "model_line" in out.columns
     assert "cpu_family" in out.columns
-    # "Acer Creator HGG" -> line "Creator"; "Intel i5-12462" -> family "Intel i5"
-    first = X.iloc[0]
-    assert out.iloc[0]["model_line"] == first["model"].split()[1]
-    assert not any(ch.isdigit() for ch in str(out.iloc[0]["cpu_family"]).split()[-1])
+
+    # "Acer Creator HGG" -> line "Creator"
+    assert out.iloc[0]["model_line"] == X.iloc[0]["model"].split()[1]
+
+    # The random trailing part number is stripped, the family name kept:
+    # "Intel i5-12462" -> "Intel i5" (the digit in "i5" belongs to the family).
+    families = out["cpu_family"].astype(str)
+    assert not families.str.contains(r"\d{3,}$", regex=True).any()
+    # Cardinality collapses by orders of magnitude once the number is stripped.
+    assert families.nunique() < X["cpu_model"].nunique() / 10
+    sample = X["cpu_model"] == "Intel i5-12462"
+    if sample.any():
+        assert out.loc[sample, "cpu_family"].eq("Intel i5").all()
 
 
 def test_structural_zeros_become_missing(xy):

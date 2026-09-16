@@ -1,0 +1,21 @@
+{
+  "name": "additive-ridge-levels-plus",
+  "description": "Saturated additive Ridge: every low-cardinality column is expanded into one dummy per level, numeric columns are additionally kept in their original form. Chosen because the generating process was shown to be additive (exp02, exp06) and this specification beat every gradient booster while keeping the train/validation gap under one RMSE point (exp04, exp09).",
+  "kind": "single",
+  "model": "ridge",
+  "preprocessor": "levels_plus",
+  "target_transform": null,
+  "seed": 42,
+  "feature_config": {
+    "model_decomp": true,
+    "cpu_decomp": true,
+    "cpu_generation": false,
+    "structural_zeros": true,
+    "resolution": true,
+    "capacity": false,
+    "premium": false
+  },
+  "hyperparameters": {
+    "alpha": 100.0
+  }
+}
