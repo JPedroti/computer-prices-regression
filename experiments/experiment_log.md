@@ -346,6 +346,19 @@ its symmetric trees, not extra capacity.
 Explicit regularisation (`l2_leaf_reg`) shrinks the gap but costs RMSE, so it is
 not used: the gap is already comfortable.
 
+**The tuned configuration was evaluated and not adopted.** The −0.193 above is
+measured against this experiment's own 600-iteration reference, but the blend's
+CatBoost member is the 800-iteration model, which already scores 211.253 on the
+same protocol. Against *that*, the tuned configuration is worth −0.063, which at
+a blend weight of 0.628 comes to **−0.040 RMSE, or 0.019%** — while nearly
+doubling the fit time and forcing every downstream measurement (weights, margin,
+robustness) to be redone. The blend keeps the 800-iteration member, which is the
+one validated over 15 folds in exp09. The comparison is left in
+`exp07_ensembles.py`, commented out, so it can be reproduced.
+
+This is the same judgement applied in exp06b, stated once more: a statistically
+real effect is not automatically worth adopting.
+
 ---
 
 ## exp07 — Ensembles

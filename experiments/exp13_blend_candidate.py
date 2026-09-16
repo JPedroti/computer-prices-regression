@@ -47,7 +47,7 @@ INNER_SEEDS = ROBUSTNESS_SEEDS[:3]
 BASE = FeatureConfig()
 
 # Which cached out-of-fold vectors correspond to the two members.
-OOF_KEYS = ("ridge_levels", "cat_tuned")
+OOF_KEYS = ("ridge_levels", "cat")
 
 
 def members(seed: int, specs):
